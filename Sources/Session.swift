@@ -1,0 +1,400 @@
+import Foundation
+import AppKit
+import SwiftUI
+import Combine
+import UniformTypeIdentifiers
+
+/// The open song: playback, the beat under the playhead, how chords are shown, hand fixes, export.
+@MainActor
+final class Session: ObservableObject {
+    static weak var current: Session?
+
+    let player = ChordPlayer()
+    @Published var style = ChordStyle() { didSet { refreshPiano() } }
+    @Published var follow = true
+    /// The beat under the playhead (-1 before the first beat). Changes a few times a second, not 60.
+    @Published private(set) var currentBeat = -1
+    @Published private(set) var song: Song?
+    /// Selected beats (for copy / paste / setting a chord).
+    @Published private(set) var selection: ClosedRange<Int>?
+    @Published private(set) var clipboard: [ChordEdit] = []
+    @Published private(set) var canUndo = false
+    @Published private(set) var canRedo = false
+    /// After a fix: the same place in the other parts that sound the same, ready to take the fix too.
+    @Published private(set) var offer: Offer?
+
+    struct Offer: Equatable {
+        var edits: [Int: ChordEdit]
+        var places: Int
+        var chordName: String
+    }
+
+    private var anchor: Int?
+    private var undoStack: [[Int: ChordEdit]] = []
+    private var redoStack: [[Int: ChordEdit]] = []
+    private var bag = Set<AnyCancellable>()
+
+    init() {
+        Session.current = self
+        player.clock.$position
+            .sink { [weak self] t in
+                guard let self, let a = self.analysis else { return }
+                let i = a.beatIndex(at: t)
+                if i != self.currentBeat { self.currentBeat = i }
+            }
+            .store(in: &bag)
+        // Re-publish the player's changes (play state, peaks, toggles) to views that watch the session.
+        player.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }.store(in: &bag)
+    }
+
+    func open(_ song: Song?) {
+        let same = song?.id == self.song?.id
+        self.song = song?.isReady == true ? song : nil
+        if !same {
+            style.transpose = 0
+            selection = nil
+            anchor = nil
+            offer = nil
+            undoStack = []
+            redoStack = []
+            updateUndoFlags()
+        }
+        player.load(self.song)
+        refreshPiano()
+        currentBeat = analysis?.beatIndex(at: player.position) ?? -1
+    }
+
+    /// The analysis with the hand-set chords in place: what is shown, played and exported.
+    var analysis: Analysis? { song?.effective }
+
+    func isEdited(_ beat: Int) -> Bool { song?.edits?[beat] != nil }
+
+    // MARK: Unsure chords
+
+    /// Chord runs the engine was not sure of, not yet fixed or checked by ear.
+    var unsureSpans: [ChordSpan] {
+        guard let a = analysis else { return [] }
+        let edits = song?.edits ?? [:]
+        let checked = song?.checked ?? []
+        return a.spans(style).filter { s in
+            guard s.chord.root != nil else { return false }
+            let range = s.firstBeat...s.lastBeat
+            if range.contains(where: { edits[$0] != nil || checked.contains($0) }) { return false }
+            let confs = range.compactMap { a.beats[$0].conf }
+            guard !confs.isEmpty else { return false }
+            return (confs.min() ?? 1) < Analysis.unsureWeakest
+                || confs.reduce(0, +) / Double(confs.count) < Analysis.unsureAverage
+        }
+    }
+
+    /// U / ⇧U: to the next (previous) unsure chord: select it, go there, hear it.
+    func stepUnsure(_ delta: Int) {
+        let list = unsureSpans
+        guard !list.isEmpty else { Toast.shared.show("No unsure chords left"); return }
+        let here = selection?.lowerBound ?? max(0, currentBeat)
+        let target: ChordSpan?
+        if delta > 0 {
+            target = list.first { $0.firstBeat > here } ?? list.first
+        } else {
+            target = list.last { $0.firstBeat < here } ?? list.last
+        }
+        guard let span = target else { return }
+        anchor = span.firstBeat
+        selection = span.firstBeat...span.lastBeat
+        offer = nil
+        player.seek(span.start)
+        hear(span.chord)
+    }
+
+    /// O: the selected chord sounds right; it is unsure no more. Then on to the next unsure one.
+    func markChecked() {
+        guard let r = selection, let id = song?.id else { return }
+        var checked = song?.checked ?? []
+        for i in r { checked.insert(i) }
+        Library.shared.setChecked(id, checked)
+        song = Library.shared.songs.first { $0.id == id }
+        Toast.shared.show("Checked ✓")
+        if !unsureSpans.isEmpty { stepUnsure(1) }
+    }
+
+    /// The beats that are the same music as the selection (for a hint in the grid).
+    var twinsOfSelection: Set<Int> {
+        guard let r = selection, let a = analysis, r.count <= 64 else { return [] }
+        return Set(a.twinBeats(of: r).keys)
+    }
+
+    /// Offers the fix just made on `range` for every place that is the same music.
+    private func proposeTwins(_ range: ClosedRange<Int>) {
+        guard let a = analysis else { offer = nil; return }
+        var edits: [Int: ChordEdit] = [:]
+        var bars = Set<Int>()
+        let loc = a.beatLocations
+        for (t, src) in a.twinBeats(of: range) {
+            let want = ChordEdit(root: a.beats[src].root, quality: a.beats[src].quality)
+            if a.beats[t].root != want.root || a.beats[t].quality != want.quality {
+                edits[t] = want
+                bars.insert(loc[t].bar)
+            }
+        }
+        guard !edits.isEmpty else { offer = nil; return }
+        let name = style.name(style.chord(a.beats[range.lowerBound]), key: a.key)
+        offer = Offer(edits: edits, places: bars.count, chordName: name)
+    }
+
+    /// A: put the fix on the other places too.
+    func applyOffer() {
+        guard let o = offer else { return }
+        change { edits in for (i, e) in o.edits { edits[i] = e } }
+        offer = nil
+        Toast.shared.show("Fixed in \(o.places) more bar\(o.places == 1 ? "" : "s")")
+    }
+
+    func dismissOffer() { offer = nil }
+
+    private func refreshPiano() {
+        guard let a = analysis else { player.pianoTrack = []; return }
+        player.pianoTrack = a.labelBeats(style).map { (a.beats[$0].t, ChordNotes.all(style.chord(a.beats[$0]))) }
+    }
+
+    // MARK: Navigation
+
+    func seek(_ t: Double) { player.seek(t) }
+
+    func seekBeat(_ i: Int) {
+        guard let a = analysis, a.beats.indices.contains(i) else { return }
+        player.seek(a.beats[i].t)
+    }
+
+    /// Jumps a bar back or forward from the playhead.
+    func jumpBar(_ delta: Int) {
+        guard let a = analysis else { return }
+        let starts = a.beats.indices.filter { a.beats[$0].pos == 0 }.map { a.beats[$0].t }
+        guard !starts.isEmpty else { return }
+        let t = player.position
+        let here = starts.lastIndex { $0 <= t + 0.05 } ?? -1
+        // Back: to the start of this bar first, unless we are right on it.
+        var target = here + delta
+        if delta < 0, here >= 0, t - starts[here] > 0.4 { target = here }
+        player.seek(starts[max(0, min(starts.count - 1, target))])
+    }
+
+    func goToStart() { player.seek(0) }
+
+    // MARK: Selection
+
+    /// Click: select this beat (and play from it when paused it just moves there). Shift-click: extend.
+    func click(beat i: Int, extend: Bool) {
+        offer = nil
+        if extend, let a = anchor {
+            selection = min(a, i)...max(a, i)
+        } else {
+            anchor = i
+            selection = i...i
+            seekBeat(i)
+            if let a = analysis, a.beats.indices.contains(i) { hear(style.chord(a.beats[i])) }
+        }
+    }
+
+    /// For the right-click menu: act on the selection if the beat is in it, otherwise on that beat.
+    func ensureSelected(_ i: Int) {
+        if selection?.contains(i) != true {
+            anchor = i
+            selection = i...i
+        }
+    }
+
+    func clearSelection() {
+        selection = nil
+        anchor = nil
+        offer = nil
+    }
+
+    /// "Bar 5 · 1 – bar 6 · 4"
+    func selectionLabel() -> String? {
+        guard let r = selection, let a = analysis else { return nil }
+        func label(_ i: Int) -> String {
+            guard let p = a.barBeat(at: a.beats[i].t) else { return "–" }
+            return p.bar == 0 ? "pickup · \(p.beat)" : "\(p.bar) · \(p.beat)"
+        }
+        return r.count == 1 ? "BAR " + label(r.lowerBound) : "BAR " + label(r.lowerBound) + " – " + label(r.upperBound)
+    }
+
+    // MARK: Hearing chords
+
+    /// Plays a chord (as shown) on the piano.
+    func hear(_ c: Chord) { player.audition(ChordNotes.all(c)) }
+
+    /// P: the chord of the selection, or the one under the playhead.
+    func hearCurrent() {
+        guard let a = analysis else { return }
+        let i = selection?.lowerBound ?? max(0, currentBeat)
+        guard a.beats.indices.contains(i) else { return }
+        hear(style.chord(a.beats[i]))
+    }
+
+    // MARK: Fixing chords
+
+    /// What the engine would call the chord shown as `c` (transposition taken off).
+    private func raw(_ c: Chord) -> ChordEdit {
+        ChordEdit(root: c.root.map { ($0 - style.transpose + 120) % 12 }, quality: c.quality)
+    }
+
+    /// Puts a chord (as shown) on every selected beat.
+    func setChord(_ c: Chord) {
+        guard let r = selection else { return }
+        let e = raw(c)
+        change { edits in for i in r { edits[i] = e } }
+        hear(c)
+        proposeTwins(r)
+    }
+
+    func copy() {
+        guard let r = selection, let a = analysis else { return }
+        clipboard = r.map { ChordEdit(root: a.beats[$0].root, quality: a.beats[$0].quality) }
+        Toast.shared.show(clipboard.count == 1 ? "Copied 1 beat" : "Copied \(clipboard.count) beats")
+    }
+
+    /// One copied chord fills the whole selection; a copied passage is laid down from the selection's start.
+    func paste() {
+        guard let r = selection, !clipboard.isEmpty, let a = analysis else { return }
+        let clip = clipboard
+        change { edits in
+            if clip.count == 1 {
+                for i in r { edits[i] = clip[0] }
+            } else {
+                for (k, e) in clip.enumerated() where r.lowerBound + k < a.beats.count { edits[r.lowerBound + k] = e }
+            }
+        }
+        if clip.count > 1 { selection = r.lowerBound...min(a.beats.count - 1, r.lowerBound + clip.count - 1) }
+        Toast.shared.show(clip.count == 1 ? "Pasted" : "Pasted \(clip.count) beats")
+        if let sel = selection { proposeTwins(sel) }
+    }
+
+    /// ⌫: removes the chord on the selected beats; the chord before them simply goes on.
+    func deleteChord() {
+        guard let r = selection, let a = analysis else { return }
+        let prev = r.lowerBound > 0 ? a.beats[r.lowerBound - 1] : nil
+        let fill = ChordEdit(root: prev?.root, quality: prev?.quality ?? "")
+        change { edits in for i in r { edits[i] = fill } }
+        let name = prev.map { style.name(style.chord($0), key: a.key) } ?? "N.C."
+        Toast.shared.show("Chord removed: \(name) goes on")
+        proposeTwins(r)
+    }
+
+    /// PIANO mode ← / →: step from chord to chord (every name in the grid), select it, go there and hear it.
+    func stepChord(_ delta: Int) {
+        guard let a = analysis else { return }
+        let marks = a.labelBeats(style).filter { style.chord(a.beats[$0]).root != nil }
+        guard !marks.isEmpty else { return }
+        // From the playhead while playing, otherwise from the selection.
+        let here = player.isPlaying ? max(0, currentBeat) : (selection?.lowerBound ?? max(0, currentBeat))
+        let k = (marks.lastIndex { $0 <= here } ?? -1) + delta
+        guard marks.indices.contains(k) else { return }
+        let first = marks[k]
+        let all = a.labelBeats(style)
+        let last = (all.first { $0 > first } ?? a.beats.count) - 1
+        anchor = first
+        selection = first...last
+        offer = nil
+        player.seek(a.beats[first].t)
+        hear(style.chord(a.beats[first]))
+    }
+
+    /// Back to what the engine found, on the selected beats.
+    func revertSelection() {
+        guard let r = selection else { return }
+        change { edits in for i in r { edits[i] = nil } }
+    }
+
+    func revertAll() {
+        guard !(song?.edits ?? [:]).isEmpty else { return }
+        change { $0 = [:] }
+        Toast.shared.show("All chords back as detected")
+    }
+
+    func undo() {
+        guard let prev = undoStack.popLast() else { return }
+        redoStack.append(song?.edits ?? [:])
+        store(prev)
+    }
+
+    func redo() {
+        guard let next = redoStack.popLast() else { return }
+        undoStack.append(song?.edits ?? [:])
+        store(next)
+    }
+
+    private func change(_ body: (inout [Int: ChordEdit]) -> Void) {
+        guard let song, let detected = song.analysis else { return }
+        var edits = song.edits ?? [:]
+        let before = edits
+        body(&edits)
+        // An edit equal to what was detected is no edit.
+        for (i, e) in edits where detected.beats.indices.contains(i)
+            && detected.beats[i].root == e.root && detected.beats[i].quality == e.quality {
+            edits[i] = nil
+        }
+        guard edits != before else { return }
+        undoStack.append(before)
+        if undoStack.count > 200 { undoStack.removeFirst() }
+        redoStack = []
+        store(edits)
+    }
+
+    private func store(_ edits: [Int: ChordEdit]) {
+        guard let id = song?.id else { return }
+        Library.shared.setEdits(id, edits)
+        song = Library.shared.songs.first { $0.id == id }
+        refreshPiano()
+        updateUndoFlags()
+    }
+
+    private func updateUndoFlags() {
+        canUndo = !undoStack.isEmpty
+        canRedo = !redoStack.isEmpty
+    }
+
+    // MARK: Export
+
+    func exportPDF() {
+        guard let song, let a = analysis else { return }
+        ChordSheet.export(song: song, analysis: a, style: style)
+    }
+
+    func exportMIDI(_ timing: MidiWriter.Timing) {
+        guard let song, let a = analysis else { return }
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [UTType(filenameExtension: "mid") ?? .data]
+        let suffix = timing == .synced ? "chords" : "chords \(formatBPM(a.tempo.rounded())) BPM"
+        let t = style.transpose == 0 ? "" : String(format: " (%+d)", style.transpose)
+        panel.nameFieldStringValue = "\(song.title) - \(suffix)\(t).mid"
+        panel.directoryURL = URL(fileURLWithPath: song.sourcePath).deletingLastPathComponent()
+        panel.message = timing == .synced
+            ? "MIDI that lines up with the original recording (tempo follows the song)."
+            : "MIDI on a steady \(formatBPM(a.tempo.rounded())) BPM grid."
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try MidiWriter.data(a, style: style, timing: timing).write(to: url)
+            Toast.shared.show("MIDI saved: \(url.lastPathComponent)")
+        } catch {
+            Toast.shared.show("Could not save: \(error.localizedDescription)")
+        }
+    }
+}
+
+/// A short message at the bottom of the window.
+@MainActor
+final class Toast: ObservableObject {
+    static let shared = Toast()
+    @Published private(set) var message: String?
+    private var hide: Task<Void, Never>?
+
+    func show(_ text: String) {
+        withAnimation(.easeOut(duration: 0.2)) { message = text }
+        hide?.cancel()
+        hide = Task {
+            try? await Task.sleep(nanoseconds: 2_600_000_000)
+            if !Task.isCancelled { withAnimation(.easeIn(duration: 0.3)) { message = nil } }
+        }
+    }
+}

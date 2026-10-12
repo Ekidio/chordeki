@@ -1,0 +1,25 @@
+dist/
+.build/
+.icon/
+.vendor/
+.venv/
+.venv-dmg/
+.dmg/
+.DS_Store
+__pycache__/
+
+# Old web prototype and local screenshots stay out of the repo
+prototype-web/
+Screenshot*.png
+
+# Audio never goes into the repo (songs are copyrighted)
+*.mp3
+*.wav
+*.m4a
+*.aif
+*.aiff
+*.flac
+*.ogg
+*.webm
+*.mid
+*.pdf
