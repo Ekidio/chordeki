@@ -1,4 +1,4 @@
-# CHORDEKI – akkordok · ütések · midi
+# CHORDEKI – akkordok · beatek · midi
 
 [🇬🇧 English](README.md) · 🇭🇺 Magyar
 
@@ -8,16 +8,16 @@
 
 A **CHORDEKI** meghallgat egy dalt, és a beatrácsra leírja az akkordjait, mint a Chordify. Utána fülre ellenőrizheted, gyorsan javíthatod, és MIDI-ként vagy nyomtatható akkordlapként viheted tovább.
 
-Natív macOS app (Swift, Apple Silicon). Az elemzés a gépeden fut, egy betanított ütésfelismerővel (Beat This!) és a librosával – a zenéd nem hagyja el a Macet.
+Natív macOS app (Swift, Apple Silicon). Az elemzés a gépeden fut, egy betanított beatfelismerővel (Beat This!) és a librosával – a zenéd nem hagyja el a Macet.
 
 A CHORDEKI egy **EKIDIO SOUND** app. Lásd még: [STEMEKI](https://github.com/Ekidio/stemeki) · [PADEKI](https://github.com/Ekidio/padeki).
 
 ## Tudja
 
 - **Bármilyen dal:** MP3, WAV, AIFF, M4A, FLAC, WEBM (⌘O vagy behúzás az ablakra).
-- **Ütések és ütemek:** minden ütés és az „egy”, tempó, ütemmutató, hangnem.
-- **Akkordok ütésre:** dúr/moll, vagy bővített (7, maj7, m7, sus2, sus4, add9, dim, m7b5, aug). SIMPLE / EXTENDED kapcsoló, transzponálás.
-- **Együttjátszás:** a dalt követő akkordrács, NOW / NEXT gitárfogással, metronóm (CLICK) a felismert ütésekre.
+- **Beat és ütemek:** minden beat és az „egy”, tempó, ütemmutató, hangnem.
+- **Akkordok beatre:** dúr/moll, vagy bővített (7, maj7, m7, sus2, sus4, add9, dim, m7b5, aug). SIMPLE / EXTENDED kapcsoló, transzponálás.
+- **Együttjátszás:** a dalt követő akkordrács, NOW / NEXT gitárfogással, metronóm (CLICK) a felismert beatekre.
 - **Fülre ellenőrzés:** bármelyik akkordra kattintva megszólal zongorán. A **PIANO** a zenével együtt játssza az akkordokat (MIX: eredeti ↔ zongora); bekapcsolva a ←/→ akkordról akkordra lép.
 - **Bizonytalan akkordok:** ahol a motor nem biztos, jelölve van; **U** a következőre ugrik, **O** jóváhagyja.
 - **Gyors javítás:** kijelölés (kattintás, Shift+kattintás), akkord a dal akkordjai közül vagy bármelyik, ⌫ törli (az előző szól tovább), ⌘C / ⌘V egész szakaszt másol, ⌘Z visszavon.
