@@ -2,6 +2,10 @@
 
 [🇬🇧 English](README.md) · 🇭🇺 Magyar
 
+**▶ Weboldal:** [ekidio.github.io/chordeki/hu](https://ekidio.github.io/chordeki/hu/) · **⬇ Letöltés:** [legújabb kiadás (DMG)](https://github.com/Ekidio/chordeki/releases/latest)
+
+![CHORDEKI](docs/assets/chordeki-main.png)
+
 A **CHORDEKI** meghallgat egy dalt, és a beatrácsra leírja az akkordjait, mint a Chordify. Utána fülre ellenőrizheted, gyorsan javíthatod, és MIDI-ként vagy nyomtatható akkordlapként viheted tovább.
 
 Natív macOS app (Swift, Apple Silicon). Az elemzés a gépeden fut, egy betanított ütésfelismerővel (Beat This!) és a librosával – a zenéd nem hagyja el a Macet.

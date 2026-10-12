@@ -2,6 +2,10 @@
 
 🇬🇧 English · [🇭🇺 Magyar](README.hu.md)
 
+**▶ Website:** [ekidio.github.io/chordeki](https://ekidio.github.io/chordeki/) · **⬇ Download:** [latest release (DMG)](https://github.com/Ekidio/chordeki/releases/latest)
+
+![CHORDEKI](docs/assets/chordeki-main.png)
+
 **CHORDEKI** listens to a song and writes down its chords on the beat grid, Chordify-style, then lets you check them by ear, fix them fast and take them anywhere as MIDI or a printable chord sheet.
 
 It's a native macOS app (Swift, Apple Silicon). Analysis runs locally with a trained beat model (Beat This!) and librosa – your music never leaves your Mac.
