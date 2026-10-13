@@ -365,7 +365,7 @@ private struct BarView: View {
                 }
                 ForEach(Array(beats.enumerated()), id: \.element) { j, b in
                     let c = chords[b]
-                    let changed = b == 0 || chords[b - 1] != c
+                    let changed = b == 0 || chords[b - 1] != c || analysis.beats[b].restart == true
                     let showName = changed || (rowStart && j == 0)
                     BeatCell(name: showName ? session.style.name(c, key: analysis.key) : nil,
                              dimName: false, color: Theme.chordColor(c.root), on: b == current,
@@ -476,6 +476,11 @@ struct ChordMenu: View {
                 }
             }
             Button("No Chord (N.C.)") { session.ensureSelected(beat); session.setChord(.none) }
+            Button("Strike \(style.name(shown, key: a.key)) Again Here  (splits the held chord, also in MIDI)") {
+                session.strikeAgain(beat)
+            }
+            .disabled(shown.root == nil || beat == 0 || a.beats[beat].restart == true
+                      || style.chord(a.beats[max(0, beat - 1)]) != shown)
             Divider()
             Button("Remove Chord – the One Before Goes On  (⌫)") { session.ensureSelected(beat); session.deleteChord() }
             Button("Back to Detected") { session.ensureSelected(beat); session.revertSelection() }

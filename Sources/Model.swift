@@ -13,6 +13,7 @@ struct Analysis: Codable, Equatable {
         var base: String          // "" or "m": the plain triad
         var quality: String       // "", "m", "7", "maj7", "m7", "sus2", ...
         var conf: Double?         // 0…1: how sure the engine is of this beat's chord
+        var restart: Bool?        // set by hand: the same chord is struck again here (a new chord in the grid and MIDI)
     }
     var duration: Double
     var tempo: Double
@@ -89,7 +90,7 @@ extension Analysis {
         for (i, b) in beats.enumerated() {
             let c = style.chord(b)
             let end = i + 1 < beats.count ? beats[i + 1].t : duration
-            if var last = out.last, last.chord == c {
+            if var last = out.last, last.chord == c, b.restart != true {
                 last.lastBeat = i
                 last.end = end
                 out[out.count - 1] = last
@@ -174,6 +175,8 @@ extension Analysis {
 struct ChordEdit: Codable, Equatable {
     var root: Int?
     var quality: String
+    /// Strike the chord again on this beat, even if the one before is the same.
+    var restart: Bool? = nil
 
     /// The plain triad of a chord type, for SIMPLE view.
     static func base(of quality: String) -> String {
@@ -228,6 +231,7 @@ struct Song: Codable, Identifiable, Equatable {
             a.beats[i].root = e.root
             a.beats[i].quality = e.quality
             a.beats[i].base = ChordEdit.base(of: e.quality)
+            a.beats[i].restart = e.restart
         }
         return a
     }

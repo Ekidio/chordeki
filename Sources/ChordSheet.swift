@@ -156,7 +156,7 @@ private struct SheetPage: View {
                 ForEach(0..<padding, id: \.self) { _ in Color.clear.frame(maxWidth: .infinity, maxHeight: 26) }
                 ForEach(Array(beats.enumerated()), id: \.element) { j, b in
                     let c = chords[b]
-                    let changed = b == 0 || chords[b - 1] != c
+                    let changed = b == 0 || chords[b - 1] != c || analysis.beats[b].restart == true
                     let show = changed || (rowStart && j == 0)
                     ZStack(alignment: .leading) {
                         if show {

@@ -78,6 +78,7 @@ def decode(path, wav_out=None):
     if wav_out:
         import soundfile as sf
         sf.write(wav_out, stereo, rate, subtype='PCM_16')
+        emit(wav=wav_out)          # the app can start playing now
     mono = stereo.mean(axis=1)
     return soxr.resample(mono, rate, SR).astype(np.float32), mono, rate
 

@@ -12,6 +12,8 @@ final class Library: ObservableObject {
     @Published var selectedID: UUID?
     @Published var progress: [UUID: (Double, String)] = [:]
     @Published var needsEngine = !Engine.isInstalled
+    /// A song just opened by the user: it starts playing as soon as its audio can be played.
+    @Published var autoplay: UUID?
 
     private var running = false
 
@@ -69,7 +71,10 @@ final class Library: ObservableObject {
             songs.append(song)
             firstNew = firstNew ?? song.id
         }
-        if let firstNew { selectedID = firstNew }
+        if let firstNew {
+            selectedID = firstNew
+            autoplay = firstNew
+        }
         save()
         runQueue()
     }
@@ -158,6 +163,9 @@ final class Library: ObservableObject {
                       let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
                 if let p = obj["progress"] as? Double {
                     self?.progress[id] = (p, obj["step"] as? String ?? "")
+                } else if let w = obj["wav"] as? String {
+                    // The playable WAV is there before the analysis: the song can be heard already.
+                    self?.update(id) { $0.playablePath = w }
                 } else if let r = obj["result"], let rd = try? JSONSerialization.data(withJSONObject: r) {
                     do { result = try JSONDecoder().decode(Analysis.self, from: rd) }
                     catch { failure = "Unreadable engine result: \(error.localizedDescription)" }

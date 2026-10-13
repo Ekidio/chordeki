@@ -45,6 +45,7 @@ struct ContentView: View {
         }
         .onChange(of: library.selectedID) { _, _ in session.open(library.selected) }
         .onChange(of: library.selected?.state) { _, _ in session.open(library.selected) }
+        .onChange(of: library.selected?.playablePath) { _, _ in session.open(library.selected) }
         .onAppear {
             session.open(library.selected)
             DispatchQueue.main.async { NSApp.keyWindow?.makeFirstResponder(nil) }
@@ -211,6 +212,7 @@ struct EmptyStateView: View {
 
 struct ProcessingView: View {
     @EnvironmentObject var library: Library
+    @EnvironmentObject var session: Session
     let song: Song
 
     var body: some View {
@@ -227,10 +229,95 @@ struct ProcessingView: View {
                 Text((p?.1 ?? "Waiting for its turn").uppercased())
                     .font(.system(size: 11, weight: .heavy)).tracking(1.5).foregroundColor(Theme.accent)
                 BandProgress(fraction: p?.0 ?? 0, height: 6).frame(width: 360)
-                Text("Listening for beats, bars and chords. About 15 seconds a song.")
+                Text("Listening for beats, bars and chords. About 15 seconds a song – enjoy the music meanwhile.")
                     .font(.system(size: 11.5)).foregroundColor(Theme.dim)
+            }
+            if session.song?.id == song.id {
+                ListenWhileWaiting(player: session.player, clock: session.player.clock)
+                    .frame(maxWidth: 720)
+                    .padding(.top, 18)
             }
         }
         .padding(40)
+    }
+}
+
+/// While a song is analyzed: play / pause, time and the waveform with the playhead (click to jump).
+private struct ListenWhileWaiting: View {
+    @ObservedObject var player: ChordPlayer
+    let clock: PlayClock
+
+    var body: some View {
+        HStack(spacing: 14) {
+            Button { player.toggle() } label: {
+                Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
+                    .font(.system(size: 17, weight: .bold))
+                    .foregroundColor(.black)
+                    .frame(width: 46, height: 46)
+                    .background(Circle().fill(player.isPlaying ? Theme.loop : Theme.text))
+            }
+            .buttonStyle(.plain)
+            .keyboardShortcut(.space, modifiers: [])
+            .disabled(!player.canPlay)
+            .modifier(DisabledDim())
+            .help(player.canPlay ? "Play / pause (space)" : "Getting the audio ready…")
+            VStack(alignment: .leading, spacing: 6) {
+                WaitingTime(clock: clock, duration: player.duration)
+                WaitingWave(peaks: player.peaks, clock: clock, duration: player.duration) { player.seek($0) }
+                    .frame(height: 44)
+            }
+        }
+        .padding(14)
+        .background(RoundedRectangle(cornerRadius: 12).fill(Theme.panel))
+        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Theme.line))
+    }
+}
+
+private struct WaitingTime: View {
+    @ObservedObject var clock: PlayClock
+    let duration: Double
+    var body: some View {
+        HStack {
+            Text("LISTEN WHILE IT ANALYZES").font(.system(size: 9.5, weight: .heavy)).tracking(1.2).foregroundColor(Theme.dim)
+            Spacer()
+            Text("\(formatTime(clock.position, hundredths: false)) / \(formatTime(duration, hundredths: false))")
+                .font(Theme.mono(11, .semibold)).foregroundColor(Theme.text)
+        }
+    }
+}
+
+private struct WaitingWave: View {
+    let peaks: [Float]
+    @ObservedObject var clock: PlayClock
+    let duration: Double
+    let seek: (Double) -> Void
+
+    var body: some View {
+        GeometryReader { g in
+            let w = g.size.width, h = g.size.height
+            let d = max(duration, 0.001)
+            let played = CGFloat(clock.position / d) * w
+            ZStack(alignment: .leading) {
+                Canvas { ctx, size in
+                    guard !peaks.isEmpty else { return }
+                    let n = peaks.count
+                    var past = Path(), future = Path()
+                    for (i, v) in peaks.enumerated() {
+                        let x = CGFloat(i) / CGFloat(n) * size.width
+                        let a = CGFloat(v) * size.height / 2 * 0.95
+                        let r = CGRect(x: x, y: size.height / 2 - a, width: max(0.6, size.width / CGFloat(n)), height: max(0.5, a * 2))
+                        if x < played { past.addRect(r) } else { future.addRect(r) }
+                    }
+                    ctx.fill(future, with: .color(Theme.mix.opacity(0.35)))
+                    ctx.fill(past, with: .linearGradient(Gradient(colors: Theme.bands),
+                                                         startPoint: .zero, endPoint: CGPoint(x: size.width, y: 0)))
+                }
+                Rectangle().fill(Color.white).frame(width: 2, height: h)
+                    .shadow(color: .white.opacity(0.6), radius: 3)
+                    .offset(x: played - 1)
+            }
+            .contentShape(Rectangle())
+            .gesture(DragGesture(minimumDistance: 0).onChanged { v in seek(max(0, min(1, v.location.x / w)) * d) })
+        }
     }
 }

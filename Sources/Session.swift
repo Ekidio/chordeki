@@ -49,7 +49,8 @@ final class Session: ObservableObject {
 
     func open(_ song: Song?) {
         let same = song?.id == self.song?.id
-        self.song = song?.isReady == true ? song : nil
+        // Any song with audio: it plays while the analysis runs.
+        self.song = song
         if !same {
             style.transpose = 0
             selection = nil
@@ -62,6 +63,11 @@ final class Session: ObservableObject {
         player.load(self.song)
         refreshPiano()
         currentBeat = analysis?.beatIndex(at: player.position) ?? -1
+        // A song just opened starts playing at once, the analysis goes on behind it.
+        if let id = song?.id, Library.shared.autoplay == id, player.canPlay {
+            Library.shared.autoplay = nil
+            if !player.isPlaying { player.play() }
+        }
     }
 
     /// The analysis with the hand-set chords in place: what is shown, played and exported.
@@ -130,8 +136,9 @@ final class Session: ObservableObject {
         var bars = Set<Int>()
         let loc = a.beatLocations
         for (t, src) in a.twinBeats(of: range) {
-            let want = ChordEdit(root: a.beats[src].root, quality: a.beats[src].quality)
-            if a.beats[t].root != want.root || a.beats[t].quality != want.quality {
+            let want = ChordEdit(root: a.beats[src].root, quality: a.beats[src].quality, restart: a.beats[src].restart)
+            if a.beats[t].root != want.root || a.beats[t].quality != want.quality
+                || (want.restart == true && a.beats[t].restart != true) {
                 edits[t] = want
                 bars.insert(loc[t].bar)
             }
@@ -241,16 +248,31 @@ final class Session: ObservableObject {
 
     /// Puts a chord (as shown) on every selected beat.
     func setChord(_ c: Chord) {
-        guard let r = selection else { return }
+        guard let r = selection, let a = analysis else { return }
         let e = raw(c)
-        change { edits in for i in r { edits[i] = e } }
+        // The same chord as the one going on before: strike it again here (a new chord, also in the MIDI).
+        let again = r.lowerBound > 0 && c.root != nil && style.chord(a.beats[r.lowerBound - 1]) == c
+        change { edits in
+            for i in r { edits[i] = e }
+            if again { edits[r.lowerBound]?.restart = true }
+        }
         hear(c)
         proposeTwins(r)
     }
 
+    /// Strike the chord going on again on this beat: it becomes a new chord in the grid, on the piano and in the MIDI.
+    func strikeAgain(_ i: Int) {
+        guard let a = analysis, a.beats.indices.contains(i), a.beats[i].root != nil else { return }
+        anchor = i
+        selection = i...i
+        change { $0[i] = ChordEdit(root: a.beats[i].root, quality: a.beats[i].quality, restart: true) }
+        hear(style.chord(a.beats[i]))
+        proposeTwins(i...i)
+    }
+
     func copy() {
         guard let r = selection, let a = analysis else { return }
-        clipboard = r.map { ChordEdit(root: a.beats[$0].root, quality: a.beats[$0].quality) }
+        clipboard = r.map { ChordEdit(root: a.beats[$0].root, quality: a.beats[$0].quality, restart: a.beats[$0].restart) }
         Toast.shared.show(clipboard.count == 1 ? "Copied 1 beat" : "Copied \(clipboard.count) beats")
     }
 
@@ -331,7 +353,7 @@ final class Session: ObservableObject {
         body(&edits)
         // An edit equal to what was detected is no edit.
         for (i, e) in edits where detected.beats.indices.contains(i)
-            && detected.beats[i].root == e.root && detected.beats[i].quality == e.quality {
+            && detected.beats[i].root == e.root && detected.beats[i].quality == e.quality && e.restart != true {
             edits[i] = nil
         }
         guard edits != before else { return }

@@ -106,11 +106,14 @@ final class ChordPlayer: ObservableObject {
         sounding = notes
     }
 
+    /// Loads a song's audio. It plays before the analysis is there (no beats yet); when the analysis
+    /// arrives for the same audio, playback simply goes on with the beats added.
     func load(_ song: Song?) {
-        guard let song, let a = song.analysis else { unload(); return }
-        beats = a.beats.map { ($0.t, $0.pos == 0) }
+        guard let song else { unload(); return }
+        let a = song.analysis
+        beats = a?.beats.map { ($0.t, $0.pos == 0) } ?? []
         let path = song.audioURL.path
-        guard path != loadedPath else { return }
+        guard path != loadedPath || file == nil else { return }
         stop()
         loadedPath = path
         peaks = []
@@ -122,8 +125,11 @@ final class ChordPlayer: ObservableObject {
             engine.connect(node, to: engine.mainMixerNode, format: f.processingFormat)
             duration = Double(f.length) / f.processingFormat.sampleRate
         } catch {
+            // Not playable (yet): e.g. a WEBM before the engine has written its WAV.
             file = nil
-            duration = a.duration
+            loadedPath = nil
+            duration = a?.duration ?? 0
+            return
         }
         let url = song.audioURL
         Task.detached(priority: .userInitiated) {
@@ -142,6 +148,8 @@ final class ChordPlayer: ObservableObject {
     }
 
     // MARK: Transport
+
+    var canPlay: Bool { file != nil }
 
     func toggle() { isPlaying ? pause() : play() }
 
