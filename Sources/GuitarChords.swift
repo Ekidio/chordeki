@@ -105,3 +105,77 @@ struct ChordDiagram: View {
         }
     }
 }
+
+/// A small keyboard (two octaves from C) with the chord's notes lit; a dot marks the root.
+/// `paper`: drawn for print (white page, notes in grey).
+struct PianoChord: View {
+    let chord: Chord
+    var ink: Color = Theme.text
+    var paper = false
+
+    private static let whitePCs = [0, 2, 4, 5, 7, 9, 11]
+    private static let blackAfterWhite: [Int: Int] = [0: 1, 1: 3, 3: 6, 4: 8, 5: 10]   // white index in octave → black pc
+
+    var body: some View {
+        Canvas { ctx, size in
+            let lit: Set<Int>
+            if let r = chord.root {
+                lit = Set((ChordNotes.intervals[chord.quality] ?? [0, 4, 7]).map { r + $0 })
+            } else {
+                lit = []
+            }
+            let root = chord.root
+            let litColor = paper ? Color(white: 0.55) : Theme.chordColor(chord.root)
+            let rootColor = paper ? Color(white: 0.2) : Theme.chordColor(chord.root)
+            let ww = size.width / 14, wh = size.height
+            let bw = ww * 0.62, bh = wh * 0.6
+            let line = paper ? ink.opacity(0.6) : Color.black.opacity(0.55)
+
+            // White keys
+            for k in 0..<14 {
+                let note = (k / 7) * 12 + Self.whitePCs[k % 7]
+                let r = CGRect(x: CGFloat(k) * ww, y: 0, width: ww, height: wh)
+                let on = lit.contains(note)
+                ctx.fill(Path(roundedRect: r.insetBy(dx: 0.4, dy: 0), cornerRadius: 1.5),
+                         with: .color(on ? (note == root ? rootColor : litColor) : (paper ? .white : Color(white: 0.92))))
+                ctx.stroke(Path(roundedRect: r.insetBy(dx: 0.4, dy: 0), cornerRadius: 1.5), with: .color(line), lineWidth: 0.6)
+                if on && note == root {
+                    let d = min(ww * 0.42, 5)
+                    ctx.fill(Path(ellipseIn: CGRect(x: r.midX - d / 2, y: wh - d - 2.5, width: d, height: d)),
+                             with: .color(paper ? .white : .black.opacity(0.75)))
+                }
+            }
+            // Black keys
+            for k in 0..<14 {
+                guard let pc = Self.blackAfterWhite[k % 7] else { continue }
+                let note = (k / 7) * 12 + pc
+                let r = CGRect(x: CGFloat(k + 1) * ww - bw / 2, y: 0, width: bw, height: bh)
+                let on = lit.contains(note)
+                ctx.fill(Path(roundedRect: r, cornerRadius: 1.2),
+                         with: .color(on ? (note == root ? rootColor : litColor) : (paper ? ink : Color(white: 0.08))))
+                if on && note == root {
+                    let d = min(bw * 0.55, 4.5)
+                    ctx.fill(Path(ellipseIn: CGRect(x: r.midX - d / 2, y: bh - d - 2, width: d, height: d)),
+                             with: .color(paper ? .white : .black.opacity(0.75)))
+                }
+            }
+        }
+    }
+}
+
+/// Guitar shape or piano keys, as chosen under the grid (GUITAR / PIANO).
+struct ChordPicture: View {
+    let chord: Chord
+    var color: Color = Theme.text
+    @AppStorage("diagramStyle") private var diagramStyle = "guitar"
+
+    var body: some View {
+        if diagramStyle == "piano" {
+            PianoChord(chord: chord, ink: color)
+                .aspectRatio(14 / 5.2, contentMode: .fit)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            ChordDiagram(voicing: GuitarChords.voicing(chord), color: color)
+        }
+    }
+}

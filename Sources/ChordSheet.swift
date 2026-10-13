@@ -8,11 +8,16 @@ enum ChordSheet {
     static let page = CGSize(width: 595, height: 842)       // A4 in points
     static let margin: CGFloat = 36
     static let rowHeight: CGFloat = 46
-    static let firstPageHeader: CGFloat = 210                 // title + diagrams
+    static let sectionHeader: CGFloat = 18
+    /// Title, facts and every chord picture (10 a row).
+    static func firstPageHeader(chords: Int, piano: Bool) -> CGFloat {
+        let rows = max(1, (chords + 9) / 10)
+        return 78 + CGFloat(rows) * (piano ? 50 : 70)
+    }
     static let otherPageHeader: CGFloat = 40
 
     @MainActor
-    static func export(song: Song, analysis a: Analysis, style: ChordStyle) {
+    static func export(song: Song, analysis a: Analysis, style: ChordStyle, sections: [SectionMark]) {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.pdf]
         let t = style.transpose == 0 ? "" : String(format: " (%+d)", style.transpose)
@@ -21,7 +26,7 @@ enum ChordSheet {
         panel.message = "A printable chord sheet: guitar shapes and the bars, as shown in CHORDEKI."
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
-            try write(to: url, title: song.title, analysis: a, style: style)
+            try write(to: url, title: song.title, analysis: a, style: style, sections: sections)
             Toast.shared.show("PDF saved: \(url.lastPathComponent)")
             NSWorkspace.shared.open(url)
         } catch {
@@ -30,17 +35,24 @@ enum ChordSheet {
     }
 
     @MainActor
-    static func write(to url: URL, title: String, analysis a: Analysis, style: ChordStyle) throws {
+    static func write(to url: URL, title: String, analysis a: Analysis, style: ChordStyle, sections: [SectionMark]) throws {
         let bars = a.bars
-        let rows = stride(from: 0, to: bars.count, by: Analysis.barsPerRow).map { Array($0..<min($0 + Analysis.barsPerRow, bars.count)) }
+        let rows = a.gridRows(sections)
+        let titles = SectionKind.titles(sections.filter { bars.indices.contains($0.bar) })
+        let piano = UserDefaults.standard.string(forKey: "diagramStyle") == "piano"
+        // Fill pages row by row; a row that starts a section is taller (its title).
         let usable = page.height - 2 * margin - 24             // footer
-        let firstRows = Int((usable - firstPageHeader) / rowHeight)
-        let nextRows = Int((usable - otherPageHeader) / rowHeight)
-        var pages: [[[Int]]] = [Array(rows.prefix(firstRows))]
-        var rest = Array(rows.dropFirst(firstRows))
-        while !rest.isEmpty {
-            pages.append(Array(rest.prefix(nextRows)))
-            rest = Array(rest.dropFirst(nextRows))
+        var pages: [[GridRow]] = [[]]
+        let headerHeight = firstPageHeader(chords: songChords(a, style).count, piano: piano)
+        var room = usable - headerHeight
+        for row in rows {
+            let h = rowHeight + (row.sectionStart ? sectionHeader : 0)
+            if h > room {
+                pages.append([])
+                room = usable - otherPageHeader
+            }
+            pages[pages.count - 1].append(row)
+            room -= h
         }
 
         var box = CGRect(origin: .zero, size: page)
@@ -51,7 +63,8 @@ enum ChordSheet {
         let pickup = (a.beats.first?.pos ?? 0) != 0
         for (p, rowsOnPage) in pages.enumerated() {
             let view = SheetPage(title: title, analysis: a, style: style, chords: chords, bars: bars, pickup: pickup,
-                                 rows: rowsOnPage, first: p == 0, pageNumber: p + 1, pageCount: pages.count)
+                                 rows: rowsOnPage, titles: titles, piano: piano, headerHeight: headerHeight,
+                                 first: p == 0, pageNumber: p + 1, pageCount: pages.count)
                 .frame(width: page.width, height: page.height)
             let renderer = ImageRenderer(content: view)
             renderer.proposedSize = ProposedViewSize(page)
@@ -70,7 +83,10 @@ private struct SheetPage: View {
     let chords: [Chord]
     let bars: [[Int]]
     let pickup: Bool
-    let rows: [[Int]]
+    let rows: [GridRow]
+    let titles: [String]
+    let piano: Bool
+    let headerHeight: CGFloat
     let first: Bool
     let pageNumber: Int
     let pageCount: Int
@@ -85,7 +101,16 @@ private struct SheetPage: View {
                 Text(title).font(.system(size: 11, weight: .bold)).foregroundColor(soft)
                     .frame(height: ChordSheet.otherPageHeader, alignment: .topLeading)
             }
-            ForEach(rows.indices, id: \.self) { r in row(rows[r]) }
+            ForEach(rows.indices, id: \.self) { r in
+                if rows[r].sectionStart, let k = rows[r].section, titles.indices.contains(k) {
+                    Text(titles[k]).font(.system(size: 9, weight: .heavy)).tracking(1.2)
+                        .foregroundColor(Theme.sectionColor(String(titles[k].split(separator: " ").first ?? "")).opacity(0.95))
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(RoundedRectangle(cornerRadius: 3).fill(Color(white: 0.12)))
+                        .frame(height: ChordSheet.sectionHeader, alignment: .bottomLeading)
+                }
+                row(rows[r].bars)
+            }
             Spacer(minLength: 0)
             HStack {
                 Text("CHORDEKI").font(.system(size: 8, weight: .black).italic()).foregroundColor(soft)
@@ -116,13 +141,17 @@ private struct SheetPage: View {
                     VStack(spacing: 1) {
                         Text(style.name(c, key: analysis.key)).font(.system(size: 9, weight: .heavy)).foregroundColor(ink)
                             .lineLimit(1).minimumScaleFactor(0.7)
-                        ChordDiagram(voicing: GuitarChords.voicing(c), color: ink).frame(width: 40, height: 48)
+                        if piano {
+                            PianoChord(chord: c, ink: ink, paper: true).frame(width: 46, height: 30).padding(.vertical, 9)
+                        } else {
+                            ChordDiagram(voicing: GuitarChords.voicing(c), color: ink).frame(width: 40, height: 48)
+                        }
                     }
                 }
             }
             .padding(.top, 4)
         }
-        .frame(height: ChordSheet.firstPageHeader, alignment: .topLeading)
+        .frame(height: headerHeight, alignment: .topLeading)
         .clipped()
     }
 

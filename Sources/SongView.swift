@@ -126,6 +126,26 @@ struct OverviewStrip: View {
                         ctx.fill(p, with: .color(Theme.mix.opacity(0.55)))
                     }
                 }
+                // Sections: coloured bands along the top, with their names
+                Canvas { ctx, size in
+                    let bars = analysis.bars
+                    let marks = session.sections.filter { bars.indices.contains($0.bar) }
+                    let titles = SectionKind.titles(marks)
+                    for (k, m) in marks.enumerated() {
+                        let t0 = analysis.beats[bars[m.bar][0]].t
+                        let t1 = k + 1 < marks.count ? analysis.beats[bars[marks[k + 1].bar][0]].t : d
+                        let x0 = t0 / d * size.width, x1 = t1 / d * size.width
+                        let c = Theme.sectionColor(m.kind)
+                        ctx.fill(Path(CGRect(x: x0, y: 0, width: max(1, x1 - x0 - 1), height: 11)), with: .color(c.opacity(0.85)))
+                        if x1 - x0 > 34 {
+                            var label = ctx
+                            label.clip(to: Path(CGRect(x: x0, y: 0, width: x1 - x0 - 2, height: 11)))
+                            label.draw(Text(titles[k]).font(.system(size: 7.5, weight: .heavy)).foregroundColor(.black.opacity(0.8)),
+                                       at: CGPoint(x: x0 + 3, y: 5.5), anchor: .leading)
+                        }
+                    }
+                }
+                .allowsHitTesting(false)
                 // Unsure chords: little orange flags above the ribbon
                 Canvas { ctx, size in
                     for sp in session.unsureSpans {
@@ -171,6 +191,7 @@ private struct PlayheadLine: View {
 
 struct NowPanel: View {
     @EnvironmentObject var session: Session
+    @AppStorage("diagramStyle") private var diagramStyle = "guitar"
     let analysis: Analysis
     let spans: [ChordSpan]
 
@@ -200,8 +221,8 @@ struct NowPanel: View {
                     .foregroundColor(cur == nil ? Theme.dim : Theme.chordColor(curChord.root))
                     .lineLimit(1).minimumScaleFactor(0.4)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                ChordDiagram(voicing: GuitarChords.voicing(curChord))
-                    .frame(width: 92, height: 112)
+                ChordPicture(chord: curChord)
+                    .frame(width: diagramStyle == "piano" ? 130 : 92, height: diagramStyle == "piano" ? 56 : 112)
                     .contentShape(Rectangle())
                     .onTapGesture { session.hear(curChord) }
             }
@@ -221,8 +242,8 @@ struct NowPanel: View {
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                ChordDiagram(voicing: next.flatMap { GuitarChords.voicing($0.chord) }, color: Theme.dim)
-                    .frame(width: 62, height: 76)
+                ChordPicture(chord: next?.chord ?? .none, color: Theme.dim)
+                    .frame(width: diagramStyle == "piano" ? 100 : 62, height: diagramStyle == "piano" ? 40 : 76)
                     .contentShape(Rectangle())
                     .onTapGesture { if let next { session.hear(next.chord) } }
                     .help("Hear it on the piano")
@@ -269,10 +290,12 @@ struct ChordGrid: View {
 
     var body: some View {
         let bars = analysis.bars
-        let rows = stride(from: 0, to: bars.count, by: barsPerRow).map { Array(bars[$0..<min($0 + barsPerRow, bars.count)]) }
+        let sections = session.sections.filter { bars.indices.contains($0.bar) }
+        let titles = SectionKind.titles(sections)
+        let rows = analysis.gridRows(sections)
         let pickup = (analysis.beats.first?.pos ?? 0) != 0
         let current = session.currentBeat
-        let currentRow = rows.firstIndex { $0.contains { $0.contains(current) } } ?? 0
+        let currentRow = rows.firstIndex { $0.bars.contains { bars[$0].contains(current) } } ?? 0
         let style = session.style
         let chords = analysis.beats.map { style.chord($0) }
         let unsure = unsureMap(session.unsureSpans)
@@ -280,17 +303,31 @@ struct ChordGrid: View {
 
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(spacing: 6) {
+                LazyVStack(alignment: .leading, spacing: 6) {
                     ForEach(rows.indices, id: \.self) { r in
-                        HStack(spacing: 6) {
-                            ForEach(rows[r].indices, id: \.self) { k in
-                                let barIndex = r * barsPerRow + k
-                                BarView(number: barIndex + (pickup ? 0 : 1), beats: rows[r][k], meter: analysis.meter,
-                                        chords: chords, analysis: analysis, current: current, rowStart: k == 0,
-                                        unsure: unsure, twins: twins)
+                        let row = rows[r]
+                        VStack(alignment: .leading, spacing: 4) {
+                            if row.sectionStart, let k = row.section, sections.indices.contains(k) {
+                                SectionHeader(mark: sections[k], title: titles[k], firstBeat: bars[sections[k].bar][0])
+                                    .padding(.top, r == 0 ? 0 : 8)
                             }
-                            if rows[r].count < barsPerRow {
-                                ForEach(0..<(barsPerRow - rows[r].count), id: \.self) { _ in Color.clear.frame(maxWidth: .infinity) }
+                            HStack(spacing: 6) {
+                                ForEach(row.bars, id: \.self) { bi in
+                                    BarView(number: bi + (pickup ? 0 : 1), beats: bars[bi], meter: analysis.meter,
+                                            chords: chords, analysis: analysis, current: current, rowStart: bi == row.bars.first,
+                                            unsure: unsure, twins: twins)
+                                }
+                                if row.bars.count < barsPerRow {
+                                    ForEach(0..<(barsPerRow - row.bars.count), id: \.self) { _ in Color.clear.frame(maxWidth: .infinity) }
+                                }
+                            }
+                        }
+                        .padding(.leading, row.section == nil ? 0 : 8)
+                        .overlay(alignment: .leading) {
+                            if let k = row.section, sections.indices.contains(k) {
+                                // A coloured line down the left side of every row of a section
+                                Rectangle().fill(Theme.sectionColor(sections[k].kind).opacity(0.7)).frame(width: 3)
+                                    .padding(.top, row.sectionStart ? 30 : 0)
                             }
                         }
                         .id(r)
@@ -310,6 +347,42 @@ struct ChordGrid: View {
     }
 }
 
+/// "VERSE 2" at the start of a section; click for a menu to rename or remove it.
+private struct SectionHeader: View {
+    @EnvironmentObject var session: Session
+    let mark: SectionMark
+    let title: String
+    let firstBeat: Int
+
+    var body: some View {
+        let color = Theme.sectionColor(mark.kind)
+        // The coloured chip is drawn by us; an invisible menu button on top of it opens the choices.
+        HStack(spacing: 6) {
+            Circle().fill(color).frame(width: 7, height: 7)
+            Text(title).font(.system(size: 11, weight: .heavy)).tracking(1.2)
+            Image(systemName: "chevron.down").font(.system(size: 8, weight: .bold)).opacity(0.6)
+        }
+        .foregroundColor(color)
+        .padding(.horizontal, 9).frame(height: 22)
+        .background(Capsule().fill(color.opacity(0.14)))
+        .overlay(Capsule().strokeBorder(color.opacity(0.45)))
+        .overlay {
+            Menu {
+                ForEach(SectionKind.all, id: \.self) { kind in
+                    Button((kind == mark.kind ? "✓ " : "") + kind) { session.setSection(kind, atBeat: firstBeat) }
+                }
+                Divider()
+                Button("Remove This Section Mark") { session.removeSection(atBeat: firstBeat) }
+            } label: { Color.clear }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .opacity(0.011)
+        }
+        .fixedSize()
+        .help("Section · click to change or remove it. Right-click any beat: Section Starts Here")
+    }
+}
+
 /// Beat → is it the first beat of its unsure run (beats of sure chords are missing).
 private func unsureMap(_ spans: [ChordSpan]) -> [Int: Bool] {
     var out: [Int: Bool] = [:]
@@ -324,9 +397,8 @@ private struct OfferBar: View {
         if let o = session.offer {
             HStack(spacing: 10) {
                 Image(systemName: "square.on.square").foregroundColor(Theme.violet)
-                Text("\(o.chordName) · the same music is in \(o.places) more bar\(o.places == 1 ? "" : "s")")
-                    .font(.system(size: 12, weight: .semibold))
-                Button("APPLY THERE  (A)") { session.applyOffer() }
+                Text(o.label).font(.system(size: 12, weight: .semibold))
+                Button(o.sectionKind == nil ? "APPLY THERE  (A)" : "MARK THEM  (A)") { session.applyOffer() }
                     .buttonStyle(PillButtonStyle(color: Theme.violet, filled: true, small: true))
                 Button { session.dismissOffer() } label: { Image(systemName: "xmark") }
                     .buttonStyle(PillButtonStyle(small: true))
@@ -482,6 +554,19 @@ struct ChordMenu: View {
             .disabled(shown.root == nil || beat == 0 || a.beats[beat].restart == true
                       || style.chord(a.beats[max(0, beat - 1)]) != shown)
             Divider()
+            Menu("Section Starts Here") {
+                ForEach(SectionKind.all, id: \.self) { kind in
+                    Button(kind) { session.setSection(kind, atBeat: beat) }
+                }
+            }
+            if session.sectionAt(beat: beat) != nil {
+                Button("Remove Section Mark Here") { session.removeSection(atBeat: beat) }
+            }
+            Menu("All Sections") {
+                Button("Back to the Suggestion") { session.resetSections() }
+                Button("Remove All Sections") { session.clearSections() }
+            }
+            Divider()
             Button("Remove Chord – the One Before Goes On  (⌫)") { session.ensureSelected(beat); session.deleteChord() }
             Button("Back to Detected") { session.ensureSelected(beat); session.revertSelection() }
                 .disabled(!(session.selection ?? beat...beat).contains { session.isEdited($0) } && !session.isEdited(beat))
@@ -502,6 +587,7 @@ func songChords(_ a: Analysis, _ style: ChordStyle) -> [Chord] {
 /// With beats selected it is the palette: click puts that chord on them.
 struct DiagramStrip: View {
     @EnvironmentObject var session: Session
+    @AppStorage("diagramStyle") private var diagramStyle = "guitar"
     let analysis: Analysis
     let spans: [ChordSpan]
 
@@ -524,6 +610,13 @@ struct DiagramStrip: View {
                         .font(.system(size: 9.5, weight: .heavy)).tracking(1).foregroundColor(Theme.dim)
                     Spacer()
                 }
+                HStack(spacing: 2) {
+                    Button { diagramStyle = "guitar" } label: { HStack(spacing: 3) { Image(systemName: "guitars"); Text("GUITAR") } }
+                        .buttonStyle(PillButtonStyle(color: Theme.accent, active: diagramStyle != "piano", small: true))
+                    Button { diagramStyle = "piano" } label: { HStack(spacing: 3) { Image(systemName: "pianokeys"); Text("PIANO") } }
+                        .buttonStyle(PillButtonStyle(color: Theme.accent, active: diagramStyle == "piano", small: true))
+                }
+                .help("Show the chords as guitar shapes or on piano keys (also in the PDF)")
             }
             .padding(.horizontal, 12).padding(.top, 8)
             ScrollView(.horizontal, showsIndicators: false) {
@@ -535,8 +628,8 @@ struct DiagramStrip: View {
                                 .font(.system(size: 13, weight: .heavy))
                                 .foregroundColor(on ? .black : Theme.chordColor(c.root))
                                 .lineLimit(1)
-                            ChordDiagram(voicing: GuitarChords.voicing(c), color: on ? .black : Theme.text)
-                                .frame(width: 54, height: 64)
+                            ChordPicture(chord: c, color: on ? .black : Theme.text)
+                                .frame(width: diagramStyle == "piano" ? 96 : 54, height: 64)
                         }
                         .padding(.horizontal, 8).padding(.vertical, 6)
                         .background(RoundedRectangle(cornerRadius: 8).fill(on ? Theme.loop : Theme.panel2))

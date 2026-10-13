@@ -22,10 +22,13 @@ struct Analysis: Codable, Equatable {
     var beats: [Beat]
     /// For every bar, the other bars that are the same music (by sound).
     var barTwins: [[Int]]?
+    /// The engine's suggestion for the song's sections.
+    var sections: [SectionMark]?
 
     enum CodingKeys: String, CodingKey {
         case duration, tempo, meter, key, beats
         case barTwins = "bar_twins"
+        case sections
     }
 
     /// A chord run is unsure when its weakest beat is below `unsureWeakest` or its average below `unsureAverage`
@@ -130,12 +133,31 @@ extension Analysis {
 
     /// Beats that show a chord name: every chord change, and the first beat of every grid row
     /// (a chord going on into a new row is named there too). The piano strikes on these, ← / → stop on them.
-    func labelBeats(_ style: ChordStyle) -> [Int] {
+    func labelBeats(_ style: ChordStyle, sections: [SectionMark] = []) -> [Int] {
         var marks = Set(spans(style).map(\.firstBeat))
-        for (k, bar) in bars.enumerated() where k % Self.barsPerRow == 0 {
-            if let first = bar.first { marks.insert(first) }
+        for row in gridRows(sections) {
+            if let bar = row.bars.first, let first = bars[bar].first { marks.insert(first) }
         }
         return marks.sorted()
+    }
+
+    /// The chord grid's rows: up to four bars each, and every section starts on a new row.
+    func gridRows(_ sections: [SectionMark]) -> [GridRow] {
+        let bars = self.bars
+        let marks = sections.filter { bars.indices.contains($0.bar) }.sorted { $0.bar < $1.bar }
+        var rows: [GridRow] = []
+        var current: Int?
+        for b in bars.indices {
+            if let k = marks.lastIndex(where: { $0.bar == b }) {
+                current = k
+                rows.append(GridRow(bars: [b], section: k, sectionStart: true))
+            } else if let last = rows.last, last.bars.count < Self.barsPerRow {
+                rows[rows.count - 1].bars.append(b)
+            } else {
+                rows.append(GridRow(bars: [b], section: current, sectionStart: false))
+            }
+        }
+        return rows
     }
 
     /// The beat playing at time `t` (-1 before the first beat).
@@ -221,6 +243,8 @@ struct Song: Codable, Identifiable, Equatable {
     var edits: [Int: ChordEdit]?
     /// Beats the user listened to and found right (unsure no more).
     var checked: Set<Int>?
+    /// Sections set by hand (nil: the engine's suggestion; empty: none).
+    var sections: [SectionMark]?
 
     var isReady: Bool { state == .ready && analysis != nil }
 
@@ -236,4 +260,39 @@ struct Song: Codable, Identifiable, Equatable {
         return a
     }
     var audioURL: URL { URL(fileURLWithPath: playablePath ?? sourcePath) }
+}
+
+/// The start of a song section, on a bar (index into `Analysis.bars`).
+struct SectionMark: Codable, Equatable, Hashable {
+    var bar: Int
+    var kind: String
+}
+
+/// A row of the chord grid.
+struct GridRow: Equatable {
+    var bars: [Int]
+    var section: Int?          // index into the sorted section marks
+    var sectionStart: Bool
+}
+
+enum SectionKind {
+    static let all = ["INTRO", "VERSE", "PRE-CHORUS", "CHORUS", "BRIDGE", "BUILD", "DROP", "SOLO", "BREAK", "OUTRO"]
+
+    /// "VERSE 1", "VERSE 2", "CHORUS 1", "BRIDGE" (a number only when the kind comes more than once).
+    static func titles(_ marks: [SectionMark]) -> [String] {
+        let sorted = marks.sorted { $0.bar < $1.bar }
+        var seen: [String: Int] = [:]
+        return sorted.map { m in
+            let total = sorted.filter { $0.kind == m.kind }.count
+            seen[m.kind, default: 0] += 1
+            return total > 1 ? "\(m.kind) \(seen[m.kind]!)" : m.kind
+        }
+    }
+}
+
+extension Song {
+    /// The sections as set by hand, or else as suggested by the engine.
+    var effectiveSections: [SectionMark] {
+        (sections ?? analysis?.sections ?? []).sorted { $0.bar < $1.bar }
+    }
 }

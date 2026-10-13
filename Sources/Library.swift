@@ -31,8 +31,9 @@ final class Library: ObservableObject {
            let saved = try? JSONDecoder().decode([Song].self, from: data) {
             // Songs caught mid-analysis by a quit start again.
             songs = saved.map { var s = $0; if s.state == .analyzing { s.state = .queued }; return s }
-            // Songs analyzed by an older engine get the new findings (unsure chords, repeats); hand fixes stay.
-            for i in songs.indices where songs[i].state == .ready && songs[i].analysis?.barTwins == nil {
+            // Songs analyzed by an older engine get the new findings (unsure chords, repeats, sections); hand fixes stay.
+            for i in songs.indices where songs[i].state == .ready
+                && (songs[i].analysis?.barTwins == nil || songs[i].analysis?.sections == nil) {
                 songs[i].state = .queued
             }
         }
@@ -88,12 +89,16 @@ final class Library: ObservableObject {
 
     func reanalyze(_ id: UUID) {
         // New beats: hand-set chords would land in the wrong places.
-        update(id) { $0.state = .queued; $0.error = nil; $0.edits = nil; $0.checked = nil }
+        update(id) { $0.state = .queued; $0.error = nil; $0.edits = nil; $0.checked = nil; $0.sections = nil }
         runQueue()
     }
 
     func setEdits(_ id: UUID, _ edits: [Int: ChordEdit]) {
         update(id) { $0.edits = edits.isEmpty ? nil : edits }
+    }
+
+    func setSections(_ id: UUID, _ sections: [SectionMark]?) {
+        update(id) { $0.sections = sections }
     }
 
     func setChecked(_ id: UUID, _ checked: Set<Int>) {
@@ -180,7 +185,7 @@ final class Library: ObservableObject {
         if let result {
             update(id) {
                 // Hand fixes stay when the beats are the same (a fresh analysis of the same file).
-                if $0.analysis?.beats.count != result.beats.count { $0.edits = nil; $0.checked = nil }
+                if $0.analysis?.beats.count != result.beats.count { $0.edits = nil; $0.checked = nil; $0.sections = nil }
                 $0.analysis = result
                 $0.playablePath = wav?.path
                 $0.state = .ready

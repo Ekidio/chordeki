@@ -25,6 +25,23 @@ enum Theme {
         .system(size: size, weight: weight, design: .monospaced)
     }
 
+    /// The colour of a song section kind.
+    static func sectionColor(_ kind: String) -> Color {
+        switch kind {
+        case "INTRO": return Color(red: 0.55, green: 0.62, blue: 0.78)
+        case "VERSE": return blue
+        case "PRE-CHORUS": return violet
+        case "CHORUS": return pink
+        case "BRIDGE": return orange
+        case "BUILD": return loop
+        case "DROP": return Color(red: 1.0, green: 0.3, blue: 0.25)
+        case "SOLO": return green
+        case "BREAK": return accent
+        case "OUTRO": return Color(red: 0.6, green: 0.6, blue: 0.66)
+        default: return dim
+        }
+    }
+
     /// A clearly different colour for each chord root.
     static func chordColor(_ root: Int?) -> Color {
         guard let root else { return dim.opacity(0.4) }

@@ -243,6 +243,83 @@ def repeats(S, bars):
     return [sorted(t) for t in twins]
 
 
+def structure(S_harmony, timbre, level, first):
+    """A suggestion for the song's sections: where the sound turns (harmony + sound colour + level),
+    which parts are the same music, and names for them (INTRO, VERSE, CHORUS, BRIDGE, OUTRO).
+    Returns [{'bar': first bar of the section, 'kind': name}]. Meant to be checked and edited by hand."""
+    n = len(S_harmony)
+    if n - first < 8:
+        return []
+    t = (timbre - timbre.mean(0)) / (timbre.std(0) + 1e-9)
+    t /= np.linalg.norm(t, axis=1, keepdims=True) + 1e-9
+    S = 0.55 * S_harmony + 0.45 * (t @ t.T + 1) / 2
+
+    # Novelty: how different the 4 bars after a bar line are from the 4 before it
+    k = 4
+    score = np.zeros(n)
+    for i in range(k, n - k + 1):
+        before, after, across = S[i - k:i, i - k:i].mean(), S[i:i + k, i:i + k].mean(), S[i - k:i, i:i + k].mean()
+        score[i] = (before + after) / 2 - across
+    for i in range(2, n - 2):
+        score[i] += 0.01 * abs(level[i:i + 2].mean() - level[i - 2:i].mean())
+
+    cand = [i for i in range(first + 2, n - 1)
+            if score[i] >= score[max(0, i - 2):i + 3].max() and score[i] > np.percentile(score[first:], 60)]
+    snapped = []
+    for i in cand:                      # sections start on the 4-bar grid when that is nearly as good
+        best = i
+        for j in (i - 1, i + 1):
+            if (j - first) % 4 == 0 and score[j] >= 0.8 * score[i]:
+                best = j
+        snapped.append(best)
+    bounds = []
+    for i in sorted(set(snapped), key=lambda i: -score[i]):
+        if all(abs(i - b) >= 4 for b in bounds) and i - first >= 4 and n - i >= 2:
+            bounds.append(i)
+    starts = [first] + sorted(bounds)
+    segs = [(a, starts[j + 1] if j + 1 < len(starts) else n) for j, a in enumerate(starts)]
+
+    # The same music gets the same letter
+    def alike(a, b):
+        m = min(a[1] - a[0], b[1] - b[0])
+        return float(np.mean([S[a[0] + x, b[0] + x] for x in range(m)])) if m else 0.0
+    letters = []
+    for j, sg in enumerate(segs):
+        same = next((letters[i] for i in range(j) if alike(segs[i], sg) >= 0.80), None)
+        letters.append(same or chr(65 + len(set(letters))))
+
+    song_level = float(np.median(level[first:]))
+    count = {l: letters.count(l) for l in letters}
+    bars_of = {l: sum(b - a for (a, b), x in zip(segs, letters) if x == l) for l in count}
+    repeated = [l for l in count if count[l] >= 2]
+    verse = max(repeated, key=lambda l: (bars_of[l], -letters.index(l))) if repeated else None
+    loud = {l: np.mean([level[a:b].mean() for (a, b), x in zip(segs, letters) if x == l]) for l in count}
+    others = [l for l in repeated if l != verse]
+    chorus = max(others, key=lambda l: loud[l]) if others else None
+
+    kinds = []
+    for j, ((a, b), l) in enumerate(zip(segs, letters)):
+        if l == verse:
+            kind = 'VERSE'
+        elif l == chorus:
+            kind = 'CHORUS'
+        elif j == 0 and count[l] == 1:
+            kind = 'INTRO'
+        elif j >= len(segs) - 2 and level[a:b].mean() < song_level - 3:
+            kind = 'OUTRO'
+        else:
+            kind = 'BRIDGE'
+        kinds.append(kind)
+    # Neighbouring parts of the same kind that are not repeats of each other become one section
+    # (verses and choruses that repeat stay separate: VERSE 1, VERSE 2…)
+    out = []
+    for j, ((a, b), kind) in enumerate(zip(segs, kinds)):
+        if out and out[-1]['kind'] == kind and kind in ('BRIDGE', 'OUTRO', 'INTRO'):
+            continue
+        out.append({'bar': int(a), 'kind': kind})
+    return out
+
+
 def detect_key(chroma_mean):
     best = (-np.inf, 0, 'major')
     for root in range(12):
@@ -278,6 +355,7 @@ def analyze(path, wav_out=None):
     bass = librosa.feature.chroma_cqt(y=y_harm, sr=SR, hop_length=HOP, bins_per_octave=36,
                                       fmin=librosa.note_to_hz('E1'), n_octaves=2)
     rms = librosa.feature.rms(y=y, hop_length=HOP)[0]
+    mfcc = librosa.feature.mfcc(y=y, sr=SR, hop_length=HOP, n_mfcc=13)
     n_frames = chroma.shape[1]
 
     progress(0.8, 'Naming the chords')
@@ -371,6 +449,17 @@ def analyze(path, wav_out=None):
     F = np.array(feats)
     S = F @ F.T
     twins = repeats(S, bars)
+
+    # Sound colour and level of every bar, for finding the song's sections
+    starts_t = [float(beats[bar[0]]) for bar in bars] + [duration]
+    timbre, level = [], []
+    for i in range(len(bars)):
+        a = min(n_frames - 1, int(starts_t[i] * SR / HOP))
+        e = max(a + 1, min(n_frames, int(starts_t[i + 1] * SR / HOP)))
+        timbre.append(mfcc[1:, a:e].mean(axis=1))
+        level.append(20 * np.log10(rms[a:e].mean() + 1e-9))
+    first_full = 1 if bars and pos[bars[0][0]] != 0 else 0
+    sections = structure(S, np.array(timbre), np.array(level), first_full)
     pickup = chords[0] if has_pickup else None
 
     progress(1.0, 'Done')
@@ -382,6 +471,7 @@ def analyze(path, wav_out=None):
         'beats': out_beats,
         'pickup': pickup,
         'bar_twins': twins,
+        'sections': sections,
     }
 
 

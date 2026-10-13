@@ -21,6 +21,9 @@ A CHORDEKI egy **EKIDIO SOUND** app. Lásd még: [STEMEKI](https://github.com/Ek
 - **Fülre ellenőrzés:** bármelyik akkordra kattintva megszólal zongorán. A **PIANO** a zenével együtt játssza az akkordokat (MIX: eredeti ↔ zongora); bekapcsolva a ←/→ akkordról akkordra lép.
 - **Bizonytalan akkordok:** ahol a motor nem biztos, jelölve van; **U** a következőre ugrik, **O** jóváhagyja.
 - **Gyors javítás:** kijelölés (kattintás, Shift+kattintás), akkord a dal akkordjai közül vagy bármelyik, ⌫ törli (az előző szól tovább), ⌘C / ⌘V egész szakaszt másol, ⌘Z visszavon.
+- **Dalszerkezet:** INTRO, VERSE, CHORUS, BRIDGE, OUTRO… fülre javasolva és szerkeszthetően (jobb klikk → Section Starts Here); a rács minden részt új sorban kezd, a hullámformán színesen látszanak, és bekerülnek a PDF-be és cue-markerként a MIDI-be.
+- **Gitár vagy zongora:** minden akkord gitárfogásként vagy zongora-billentyűzeten (GUITAR / PIANO), a PDF-ben is.
+- **Újraütés:** kitartott akkord bármelyik beaten újrakezdhető – a MIDI-ben új hang, nem kell vágni a DAW-ban.
 - **Ugyanaz a zene máshol:** a CHORDEKI hallja, mely ütemek ugyanazok; javítás után felajánlja, hogy ott is javítsa (**A**).
 - **Export:** MIDI **SYNCED** (a tempó követi a felvételt) vagy **GRID** (egyenletes, egész BPM), és **PDF akkordlap** (⌘P).
 - Önmagát frissíti (Sparkle).

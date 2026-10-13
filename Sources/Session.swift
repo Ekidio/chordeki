@@ -24,14 +24,23 @@ final class Session: ObservableObject {
     @Published private(set) var offer: Offer?
 
     struct Offer: Equatable {
-        var edits: [Int: ChordEdit]
+        var edits: [Int: ChordEdit] = [:]
+        /// A section offer: these bars start the same kind of section.
+        var sectionBars: [Int] = []
+        var sectionKind: String?
         var places: Int
-        var chordName: String
+        var label: String
+    }
+
+    /// What undo / redo restore: the hand-set chords and sections together.
+    private struct Snapshot: Equatable {
+        var edits: [Int: ChordEdit]
+        var sections: [SectionMark]?
     }
 
     private var anchor: Int?
-    private var undoStack: [[Int: ChordEdit]] = []
-    private var redoStack: [[Int: ChordEdit]] = []
+    private var undoStack: [Snapshot] = []
+    private var redoStack: [Snapshot] = []
     private var bag = Set<AnyCancellable>()
 
     init() {
@@ -74,6 +83,9 @@ final class Session: ObservableObject {
     var analysis: Analysis? { song?.effective }
 
     func isEdited(_ beat: Int) -> Bool { song?.edits?[beat] != nil }
+
+    /// The song's sections (set by hand, or the engine's suggestion).
+    var sections: [SectionMark] { song?.effectiveSections ?? [] }
 
     // MARK: Unsure chords
 
@@ -145,22 +157,82 @@ final class Session: ObservableObject {
         }
         guard !edits.isEmpty else { offer = nil; return }
         let name = style.name(style.chord(a.beats[range.lowerBound]), key: a.key)
-        offer = Offer(edits: edits, places: bars.count, chordName: name)
+        offer = Offer(edits: edits, places: bars.count, label: "\(name) · the same music is in \(bars.count) more bar\(bars.count == 1 ? "" : "s")")
     }
 
-    /// A: put the fix on the other places too.
+    /// A: put the fix (chords or sections) on the other places too.
     func applyOffer() {
         guard let o = offer else { return }
-        change { edits in for (i, e) in o.edits { edits[i] = e } }
+        if let kind = o.sectionKind {
+            changeSections { marks in
+                for b in o.sectionBars {
+                    marks.removeAll { $0.bar == b }
+                    marks.append(SectionMark(bar: b, kind: kind))
+                }
+            }
+            Toast.shared.show("\(kind) marked in \(o.places) more place\(o.places == 1 ? "" : "s")")
+        } else {
+            change { edits in for (i, e) in o.edits { edits[i] = e } }
+            Toast.shared.show("Fixed in \(o.places) more bar\(o.places == 1 ? "" : "s")")
+        }
         offer = nil
-        Toast.shared.show("Fixed in \(o.places) more bar\(o.places == 1 ? "" : "s")")
+    }
+
+    // MARK: Sections
+
+    /// A section of `kind` starts at the bar of `beat`. Offers the same for every place that is the same music.
+    func setSection(_ kind: String, atBeat beat: Int) {
+        guard let a = analysis, a.beats.indices.contains(beat) else { return }
+        let bar = a.beatLocations[beat].bar
+        changeSections { marks in
+            marks.removeAll { $0.bar == bar }
+            marks.append(SectionMark(bar: bar, kind: kind))
+        }
+        // The same music elsewhere: bars whose next four bars repeat this bar's next four.
+        guard let twins = a.barTwins else { offer = nil; return }
+        let n = a.bars.count
+        let span = min(4, n - bar)
+        var starts: [Int] = []
+        for cand in (twins.indices.contains(bar) ? twins[bar] : []) where cand != bar {
+            let ok = (0..<span).allSatisfy { t in
+                bar + t < twins.count && twins[bar + t].contains(cand + t)
+            }
+            let taken = sections.contains { $0.bar == cand && $0.kind == kind }
+            if ok && !taken && !starts.contains(where: { abs($0 - cand) < 4 }) { starts.append(cand) }
+        }
+        offer = starts.isEmpty ? nil : Offer(sectionBars: starts, sectionKind: kind, places: starts.count,
+                                             label: "\(kind) · the same music starts at \(starts.count) more place\(starts.count == 1 ? "" : "s")")
+    }
+
+    /// No section starts at the bar of `beat` any more (it joins the section before).
+    func removeSection(atBeat beat: Int) {
+        guard let a = analysis, a.beats.indices.contains(beat) else { return }
+        let bar = a.beatLocations[beat].bar
+        changeSections { $0.removeAll { $0.bar == bar } }
+    }
+
+    func sectionAt(beat: Int) -> SectionMark? {
+        guard let a = analysis, a.beats.indices.contains(beat) else { return nil }
+        let bar = a.beatLocations[beat].bar
+        return sections.first { $0.bar == bar }
+    }
+
+    /// Back to the engine's suggestion.
+    func resetSections() { storeChange(Snapshot(edits: song?.edits ?? [:], sections: nil)) }
+
+    func clearSections() { changeSections { $0 = [] } }
+
+    private func changeSections(_ body: (inout [SectionMark]) -> Void) {
+        var marks = sections
+        body(&marks)
+        storeChange(Snapshot(edits: song?.edits ?? [:], sections: marks.sorted { $0.bar < $1.bar }))
     }
 
     func dismissOffer() { offer = nil }
 
     private func refreshPiano() {
         guard let a = analysis else { player.pianoTrack = []; return }
-        player.pianoTrack = a.labelBeats(style).map { (a.beats[$0].t, ChordNotes.all(style.chord(a.beats[$0]))) }
+        player.pianoTrack = a.labelBeats(style, sections: sections).map { (a.beats[$0].t, ChordNotes.all(style.chord(a.beats[$0]))) }
     }
 
     // MARK: Navigation
@@ -306,14 +378,14 @@ final class Session: ObservableObject {
     /// PIANO mode ← / →: step from chord to chord (every name in the grid), select it, go there and hear it.
     func stepChord(_ delta: Int) {
         guard let a = analysis else { return }
-        let marks = a.labelBeats(style).filter { style.chord(a.beats[$0]).root != nil }
+        let marks = a.labelBeats(style, sections: sections).filter { style.chord(a.beats[$0]).root != nil }
         guard !marks.isEmpty else { return }
         // From the playhead while playing, otherwise from the selection.
         let here = player.isPlaying ? max(0, currentBeat) : (selection?.lowerBound ?? max(0, currentBeat))
         let k = (marks.lastIndex { $0 <= here } ?? -1) + delta
         guard marks.indices.contains(k) else { return }
         let first = marks[k]
-        let all = a.labelBeats(style)
+        let all = a.labelBeats(style, sections: sections)
         let last = (all.first { $0 > first } ?? a.beats.count) - 1
         anchor = first
         selection = first...last
@@ -334,38 +406,46 @@ final class Session: ObservableObject {
         Toast.shared.show("All chords back as detected")
     }
 
+    private var snapshot: Snapshot { Snapshot(edits: song?.edits ?? [:], sections: song?.sections) }
+
     func undo() {
         guard let prev = undoStack.popLast() else { return }
-        redoStack.append(song?.edits ?? [:])
+        redoStack.append(snapshot)
         store(prev)
     }
 
     func redo() {
         guard let next = redoStack.popLast() else { return }
-        undoStack.append(song?.edits ?? [:])
+        undoStack.append(snapshot)
         store(next)
     }
 
     private func change(_ body: (inout [Int: ChordEdit]) -> Void) {
         guard let song, let detected = song.analysis else { return }
         var edits = song.edits ?? [:]
-        let before = edits
         body(&edits)
         // An edit equal to what was detected is no edit.
         for (i, e) in edits where detected.beats.indices.contains(i)
             && detected.beats[i].root == e.root && detected.beats[i].quality == e.quality && e.restart != true {
             edits[i] = nil
         }
-        guard edits != before else { return }
+        storeChange(Snapshot(edits: edits, sections: song.sections))
+    }
+
+    /// Records an undo step and stores the new state.
+    private func storeChange(_ next: Snapshot) {
+        let before = snapshot
+        guard next != before else { return }
         undoStack.append(before)
         if undoStack.count > 200 { undoStack.removeFirst() }
         redoStack = []
-        store(edits)
+        store(next)
     }
 
-    private func store(_ edits: [Int: ChordEdit]) {
+    private func store(_ s: Snapshot) {
         guard let id = song?.id else { return }
-        Library.shared.setEdits(id, edits)
+        Library.shared.setEdits(id, s.edits)
+        Library.shared.setSections(id, s.sections)
         song = Library.shared.songs.first { $0.id == id }
         refreshPiano()
         updateUndoFlags()
@@ -380,7 +460,7 @@ final class Session: ObservableObject {
 
     func exportPDF() {
         guard let song, let a = analysis else { return }
-        ChordSheet.export(song: song, analysis: a, style: style)
+        ChordSheet.export(song: song, analysis: a, style: style, sections: sections)
     }
 
     func exportMIDI(_ timing: MidiWriter.Timing) {
@@ -396,7 +476,7 @@ final class Session: ObservableObject {
             : "MIDI on a steady \(formatBPM(a.tempo.rounded())) BPM grid."
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
-            try MidiWriter.data(a, style: style, timing: timing).write(to: url)
+            try MidiWriter.data(a, style: style, timing: timing, sections: sections).write(to: url)
             Toast.shared.show("MIDI saved: \(url.lastPathComponent)")
         } catch {
             Toast.shared.show("Could not save: \(error.localizedDescription)")

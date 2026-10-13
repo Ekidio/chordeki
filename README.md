@@ -21,6 +21,9 @@ CHORDEKI is an **EKIDIO SOUND** app. See also: [STEMEKI](https://github.com/Ekid
 - **Check by ear:** click any chord to hear it on the piano. **PIANO** plays the chords along with the song (MIX: original ↔ piano); with PIANO on, ← / → step from chord to chord.
 - **Unsure chords:** the ones the engine wasn't sure of are marked; **U** goes to the next one, **O** marks it right.
 - **Fix fast:** select beats (click, shift-click), pick a chord from the song's chords or any chord, ⌫ removes one (the chord before goes on), ⌘C / ⌘V copy a whole passage, ⌘Z undo.
+- **Song sections:** INTRO, VERSE, CHORUS, BRIDGE, OUTRO… suggested by ear and editable (right-click → Section Starts Here); the grid starts every section on a new row, the waveform shows them in colour, and they go into the PDF and as cue markers into the MIDI.
+- **Guitar or piano:** every chord as a guitar shape or on piano keys (GUITAR / PIANO), also in the PDF.
+- **Strike again:** a held chord can start again on any beat – a new note in the MIDI, no cutting in the DAW.
 - **Same music elsewhere:** CHORDEKI hears which bars are the same music; after a fix it offers to put it there too (**A**).
 - **Export:** MIDI **SYNCED** (tempo map follows the recording) or **GRID** (steady whole BPM), and a **PDF chord sheet** (⌘P).
 - Updates itself (Sparkle).

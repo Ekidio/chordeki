@@ -7,7 +7,8 @@ enum MidiWriter {
 
     static let ppq = 480
 
-    static func data(_ a: Analysis, style: ChordStyle, timing: Timing) -> Data {
+    /// `sections` become cue markers ("VERSE 1", "CHORUS 1"…) on their first bar.
+    static func data(_ a: Analysis, style: ChordStyle, timing: Timing, sections: [SectionMark] = []) -> Data {
         let beats = a.beats
         guard !beats.isEmpty else { return Data() }
         let durations = beats.indices.map { i in (i + 1 < beats.count ? beats[i + 1].t : a.duration) - beats[i].t }
@@ -59,6 +60,12 @@ enum MidiWriter {
                 bass.append((on, [0x91, b, 95]))
                 bass.append((off, [0x81, b, 0]))
             }
+        }
+
+        let bars = a.bars
+        let marks = sections.filter { bars.indices.contains($0.bar) }.sorted { $0.bar < $1.bar }
+        for (m, title) in zip(marks, SectionKind.titles(marks)) {
+            conductor.append((tickOfBeat(bars[m.bar][0]), meta(0x07, title)))      // cue point
         }
 
         chords.insert((0, [0xC0, 0]), at: 0)                                  // piano
