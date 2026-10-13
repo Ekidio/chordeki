@@ -44,14 +44,15 @@ enum MidiWriter {
         }
 
         conductor.append((0, [0xFF, 0x58, 0x04, UInt8(a.meter), 2, 24, 8]))     // time signature meter/4
-        conductor.append((0, meta(0x03, "CHORDEKI")))
+        // No name on the conductor track: Logic & co. would make an empty track of it.
+        var markers: [Int: String] = [:]                                       // tick → marker text
 
         for span in a.spans(style) {
             guard span.chord.root != nil else { continue }
             let on = tickOfBeat(span.firstBeat)
             let off = span.lastBeat + 1 < beats.count ? tickOfBeat(span.lastBeat + 1) : endTick
             guard off > on else { continue }
-            conductor.append((on, meta(0x06, style.name(span.chord, key: a.key))))
+            markers[on] = style.name(span.chord, key: a.key)
             for n in ChordNotes.upper(span.chord) {
                 chords.append((on, [0x90, n, 80]))
                 chords.append((off, [0x80, n, 0]))
@@ -65,7 +66,13 @@ enum MidiWriter {
         let bars = a.bars
         let marks = sections.filter { bars.indices.contains($0.bar) }.sorted { $0.bar < $1.bar }
         for (m, title) in zip(marks, SectionKind.titles(marks)) {
-            conductor.append((tickOfBeat(bars[m.bar][0]), meta(0x07, title)))      // cue point
+            let tick = tickOfBeat(bars[m.bar][0])
+            // The section in the marker too ("VERSE 1 | F#m"): DAWs that ignore cue points (Logic) show it.
+            markers[tick] = markers[tick].map { "\(title) | \($0)" } ?? title
+            conductor.append((tick, meta(0x07, title)))                          // cue point, for DAWs that read them
+        }
+        for (tick, text) in markers.sorted(by: { $0.key < $1.key }) {
+            conductor.append((tick, meta(0x06, text)))
         }
 
         chords.insert((0, [0xC0, 0]), at: 0)                                  // piano
