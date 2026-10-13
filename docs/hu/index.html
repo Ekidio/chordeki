@@ -102,7 +102,7 @@
     <p class="lead">Az akkordfelismerés AI segítségével történik! A CHORDEKI analizálja a zene ütemét és akkordmenetét pillanatok alatt. A bizonytalan akkordokat jelöli!</p>
     <div class="grid">
       <div class="card" style="--c:var(--orange)"><h3>Kvantált beatkezelés!</h3><p>Az AI beatfelismerő (Beat This!) végighallgatja a dalt, és kirajzolja annak szerkezetét. Az akkordok ott váltanak, ahol a zene: az ütemvonalon vagy fél ütemnél.</p></div>
-      <div class="card" style="--c:var(--accent)"><h3>Akkordok többféle módban</h3><p>Dúr, moll vagy bővített: 7, maj7, m7, sus2, sus4, add9, dim, m7b5, aug. <b style="color:#fff">SIMPLE / EXTENDED</b> egy kattintással, transzponálás, gitárfogás minden akkordhoz, lejátszás közben NOW és NEXT.</p></div>
+      <div class="card" style="--c:var(--accent)"><h3>Akkordok többféle módban</h3><p>Dúr, moll vagy bővített: 7, maj7, m7, sus2, sus4, add9, dim, m7b5, aug. <b style="color:#fff">SIMPLE / EXTENDED</b> egy kattintással, transzponálás, gitárfogás vagy zongora-billentyűzet minden akkordhoz, lejátszás közben NOW és NEXT.</p></div>
       <div class="card" style="--c:var(--violet)"><h3>Ellenőrizd a füleddel!</h3><p>Kattints bármelyik akkordra, és megszólal zongorán. A <b style="color:#fff">PIANO</b> a dallal együtt játssza az akkordokat; a <b style="color:#fff">MIX</b> csúszkával keverheted a zene és a zongora hangját. Bekapcsolt PIANO mellett a <span class="k">←</span> <span class="k">→</span> akkordról akkordra lép.</p></div>
       <div class="card" style="--c:var(--pink)"><h3>Javítás másodpercek alatt</h3><p>Kattints egy beatre, Shift+kattintással többre, és válaszd ki a jó akkordot a dal saját akkordjai közül vagy az akkordlistából bármelyiket! <span class="k">⌫</span> töröl (az előző szól tovább), <span class="k">⌘C</span> <span class="k">⌘V</span> egész szakaszt másol, <span class="k">⌘Z</span> visszavon.</p></div>
     </div>
@@ -124,13 +124,38 @@
 </section>
 
 <section style="padding-top:10px">
+  <div class="wrap feature">
+    <img src="../assets/chordeki-sections.png" alt="Részekre tagolt akkordrács: VERSE 1, VERSE 2, a dal szerkezete színes sávokként a hullámformán">
+    <div>
+      <h2>Látod a dal szerkezetét</h2>
+      <p class="lead">Verze, refrén, átvezetés: az akkordoknak akkor van értelme, ha látod, hová tartoznak.</p>
+      <div class="points">
+        <div class="point" style="--c:var(--blue)"><h3>Automatikus részfelismerés</h3><p>A CHORDEKI meghallja, mi ismétlődik és hol fordul a zene, és javaslatot tesz a szerkezetre: <b style="color:#fff">INTRO, VERSE, CHORUS, BRIDGE, OUTRO</b>… Minden rész új sorban kezdődik a rácsban, a hullámformán pedig színesen látszik az egész dal.</p></div>
+        <div class="point" style="--c:var(--pink)"><h3>Te döntesz</h3><p>Kattints egy rész nevére az átnevezéshez vagy törléshez, vagy jobb klikk bármelyik beaten: <b style="color:#fff">Section Starts Here</b> – PRE-CHORUS, BUILD, DROP, SOLO, BREAK is választható. Jelölj meg egy refrént, és felajánlja a többi ugyanilyen helyet: az <span class="k">A</span> mindet megjelöli. <span class="k">⌘Z</span> visszavon.</p></div>
+        <div class="point" style="--c:var(--green)"><h3>Minden exportban</h3><p>A részek címei a PDF akkordlapon, a MIDI-ben pedig cue-markerként, így a DAW-ban is látod a dal részeit.</p></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section style="padding-top:10px">
+  <div class="wrap feature">
+    <div>
+      <h2>Gitár vagy zongora</h2>
+      <p class="lead">Nem mindenki olvas gitárfogást. Az akkordrács alatti <b>GUITAR / PIANO</b> kapcsolóval minden akkord zongora-billentyűzeten jelenik meg: a hangok az akkord színével világítanak, az alaphangon pötty van. A NOW, a NEXT és a PDF akkordlap is a kapcsolót követi.</p>
+    </div>
+    <img src="../assets/chordeki-piano.png" alt="Akkordok zongora-billentyűzeten az akkordrács alatt és a NOW / NEXT panelen">
+  </div>
+</section>
+
+<section style="padding-top:10px">
   <div class="wrap">
     <h2>MIDI és PDF export</h2>
     <p class="lead">Minden export pontosan az, amit látsz: SIMPLE vagy EXTENDED, transzponálva, a javításaiddal.</p>
     <div class="pyramid">
-      <div class="tier"><div class="name">MIDI SYNCED</div><p>Akkordok, basszus és akkordnevek markerként, a felvételt beatről beatre követő tempótérképpel. Tedd be a zenét és az exportált MIDI-fájlt a DAW-ba.</p><div class="meta">⌘E · a felvételhez</div></div>
+      <div class="tier"><div class="name">MIDI SYNCED</div><p>Akkordok, basszus, akkordnevek markerként és a dal részei cue-markerként, a felvételt beatről beatre követő tempótérképpel. Tedd be a zenét és az exportált MIDI-fájlt a DAW-ba.</p><div class="meta">⌘E · a felvételhez</div></div>
       <div class="tier"><div class="name" style="background:var(--accent)">MIDI GRID</div><p>A dal fix BPM-jéhez igazodó MIDI-mentés.</p><div class="meta">⇧⌘E · produkcióhoz</div></div>
-      <div class="tier"><div class="name" style="background:var(--loop)">PDF</div><p>Nyomtatható akkordlap: cím, hangnem, tempó, minden gitárfogás, valamint az ütemek négyes sorokban, ütemszámokkal.</p><div class="meta">⌘P · játékhoz</div></div>
+      <div class="tier"><div class="name" style="background:var(--loop)">PDF</div><p>Nyomtatható akkordlap: cím, hangnem, tempó, minden akkord gitárfogásként vagy zongora-billentyűzeten, valamint az ütemek részenként, négyes sorokban, ütemszámokkal.</p><div class="meta">⌘P · játékhoz</div></div>
     </div>
   </div>
 </section>

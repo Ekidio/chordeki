@@ -101,7 +101,7 @@
     <p class="lead">Chord apps guess and leave you alone with the guess. CHORDEKI starts there: it hears the beat and the bars right, shows you where it might be wrong, and lets you check and fix every chord by ear.</p>
     <div class="grid">
       <div class="card" style="--c:var(--orange)"><h3>Beats you can trust</h3><p>A trained beat model (Beat This!) listens to the whole song and finds every beat and the 1 of every bar. The chords change where the music changes: on the bar line or the half bar, not anywhere.</p></div>
-      <div class="card" style="--c:var(--accent)"><h3>Chords on the beat</h3><p>Major and minor, or extended: 7, maj7, m7, sus2, sus4, add9, dim, m7b5, aug. <b style="color:#fff">SIMPLE / EXTENDED</b> in one click, transpose, a guitar shape for every chord, NOW and NEXT while it plays.</p></div>
+      <div class="card" style="--c:var(--accent)"><h3>Chords on the beat</h3><p>Major and minor, or extended: 7, maj7, m7, sus2, sus4, add9, dim, m7b5, aug. <b style="color:#fff">SIMPLE / EXTENDED</b> in one click, transpose, a guitar shape or piano keys for every chord, NOW and NEXT while it plays.</p></div>
       <div class="card" style="--c:var(--violet)"><h3>Check by ear</h3><p>Click any chord and hear it on the piano. <b style="color:#fff">PIANO</b> plays the chords along with the song; slide <b style="color:#fff">MIX</b> between the original and the piano. With PIANO on, <span class="k">←</span> <span class="k">→</span> step from chord to chord.</p></div>
       <div class="card" style="--c:var(--pink)"><h3>Fix in seconds</h3><p>Click a beat, shift-click for more, pick the right chord from the song's own chords or any chord. <span class="k">⌫</span> removes one (the chord before goes on), <span class="k">⌘C</span> <span class="k">⌘V</span> copy a whole passage, <span class="k">⌘Z</span> undoes.</p></div>
     </div>
@@ -123,13 +123,38 @@
 </section>
 
 <section style="padding-top:10px">
+  <div class="wrap feature">
+    <img src="assets/chordeki-sections.png" alt="The chord grid in sections: VERSE 1, VERSE 2, with the song's structure as coloured bands on the waveform">
+    <div>
+      <h2>See the song's shape</h2>
+      <p class="lead">Verse, chorus, bridge: the chords make sense when you see where they belong.</p>
+      <div class="points">
+        <div class="point" style="--c:var(--blue)"><h3>Sections, suggested</h3><p>CHORDEKI listens for what repeats and where the sound turns, and suggests the structure: <b style="color:#fff">INTRO, VERSE, CHORUS, BRIDGE, OUTRO</b>… Every section starts on a new row of the grid, and the waveform shows the whole song in colour.</p></div>
+        <div class="point" style="--c:var(--pink)"><h3>Yours to change</h3><p>Click a section's name to rename or remove it, or right-click any beat: <b style="color:#fff">Section Starts Here</b> – also PRE-CHORUS, BUILD, DROP, SOLO, BREAK. Mark one chorus and it offers the same music elsewhere: <span class="k">A</span> marks them all. <span class="k">⌘Z</span> undoes.</p></div>
+        <div class="point" style="--c:var(--green)"><h3>In every export</h3><p>Section titles on the PDF chord sheet, and cue markers in the MIDI, so your DAW shows the song's parts too.</p></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section style="padding-top:10px">
+  <div class="wrap feature">
+    <div>
+      <h2>Guitar or piano</h2>
+      <p class="lead">Not everyone reads guitar boxes. One switch under the grid – <b>GUITAR / PIANO</b> – shows every chord on piano keys instead: the notes lit in the chord's colour, a dot on the root. NOW, NEXT and the PDF chord sheet follow the switch.</p>
+    </div>
+    <img src="assets/chordeki-piano.png" alt="Chords shown on piano keys under the grid and in the NOW / NEXT panel">
+  </div>
+</section>
+
+<section style="padding-top:10px">
   <div class="wrap">
     <h2>Take it anywhere</h2>
     <p class="lead">Every export is exactly what you see: SIMPLE or EXTENDED, transposed, with your fixes.</p>
     <div class="pyramid">
-      <div class="tier"><div class="name">MIDI SYNCED</div><p>Chords, bass and chord names as markers, with a tempo map that follows the recording beat by beat. Drop it under the original in any DAW: it stays together to the last bar.</p><div class="meta">⌘E · for the recording</div></div>
+      <div class="tier"><div class="name">MIDI SYNCED</div><p>Chords, bass, chord names as markers and the song's sections as cue markers, with a tempo map that follows the recording beat by beat. Drop it under the original in any DAW: it stays together to the last bar.</p><div class="meta">⌘E · for the recording</div></div>
       <div class="tier"><div class="name" style="background:var(--accent)">MIDI GRID</div><p>The same on one steady tempo, a whole BPM. Clean bars for your own production, a drum machine, quantized parts.</p><div class="meta">⇧⌘E · for producing</div></div>
-      <div class="tier"><div class="name" style="background:var(--loop)">PDF</div><p>A printable chord sheet: title, key, tempo, every guitar shape, then the bars in rows of four with bar numbers.</p><div class="meta">⌘P · for playing</div></div>
+      <div class="tier"><div class="name" style="background:var(--loop)">PDF</div><p>A printable chord sheet: title, key, tempo, every chord as a guitar shape or on piano keys, then the bars section by section, in rows of four with bar numbers.</p><div class="meta">⌘P · for playing</div></div>
     </div>
   </div>
 </section>
