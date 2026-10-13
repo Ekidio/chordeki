@@ -33,7 +33,8 @@ final class Library: ObservableObject {
             songs = saved.map { var s = $0; if s.state == .analyzing { s.state = .queued }; return s }
             // Songs analyzed by an older engine get the new findings (unsure chords, repeats, sections); hand fixes stay.
             for i in songs.indices where songs[i].state == .ready
-                && (songs[i].analysis?.barTwins == nil || songs[i].analysis?.sections == nil) {
+                && (songs[i].analysis?.barTwins == nil || songs[i].analysis?.sections == nil
+                    || songs[i].analysis?.onsets == nil) {
                 songs[i].state = .queued
             }
         }

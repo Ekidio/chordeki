@@ -7,8 +7,14 @@ enum MidiWriter {
 
     static let ppq = 480
 
-    /// `sections` become cue markers ("VERSE 1", "CHORUS 1"…) on their first bar.
-    static func data(_ a: Analysis, style: ChordStyle, timing: Timing, sections: [SectionMark] = []) -> Data {
+    /// `sections` become markers / cue points ("VERSE 1", "CHORUS 1"…) on their first bar.
+    /// `rhythm`: the chord track plays in the rhythm of the recording's accompaniment (16th grid)
+    /// instead of one held chord per change. The bass always holds.
+    static func data(_ a: Analysis, style: ChordStyle, timing: Timing, sections: [SectionMark] = [],
+                     rhythm: Bool = false) -> Data {
+        // Markers always carry letter names, whatever the screen shows (Roman / Nashville).
+        var letters = style
+        letters.numerals = .letters
         let beats = a.beats
         guard !beats.isEmpty else { return Data() }
         let durations = beats.indices.map { i in (i + 1 < beats.count ? beats[i + 1].t : a.duration) - beats[i].t }
@@ -19,6 +25,7 @@ enum MidiWriter {
         var bass: [(Int, [UInt8])] = []
         let tickOfBeat: (Int) -> Int
         let endTick: Int
+        let hitTick: (Double) -> Int?                                            // a moment → tick on the 16th grid
 
         switch timing {
         case .grid:
@@ -27,6 +34,8 @@ enum MidiWriter {
             let spb = 60 / bpm
             tickOfBeat = { i in Int((beats[i].t / spb * Double(ppq)).rounded()) }
             endTick = Int((a.duration / spb * Double(ppq)).rounded())
+            let sixteenth = Double(ppq / 4)
+            hitTick = { t in Int((t / spb * Double(ppq) / sixteenth).rounded() * sixteenth) }
         case .synced:
             // Count-in beats before the first beat, chosen so the 1 lands on a bar line.
             let t0 = beats[0].t
@@ -41,6 +50,12 @@ enum MidiWriter {
             }
             tickOfBeat = { i in (nPick + i) * ppq }
             endTick = (nPick + beats.count) * ppq
+            hitTick = { t in
+                let i = a.beatIndex(at: t)
+                guard i >= 0 else { return nil }
+                let frac = (t - beats[i].t) / max(0.05, durations[i])
+                return (nPick + i) * ppq + Int((frac * 4).rounded()) * (ppq / 4)
+            }
         }
 
         conductor.append((0, [0xFF, 0x58, 0x04, UInt8(a.meter), 2, 24, 8]))     // time signature meter/4
@@ -52,10 +67,30 @@ enum MidiWriter {
             let on = tickOfBeat(span.firstBeat)
             let off = span.lastBeat + 1 < beats.count ? tickOfBeat(span.lastBeat + 1) : endTick
             guard off > on else { continue }
-            markers[on] = style.name(span.chord, key: a.key)
-            for n in ChordNotes.upper(span.chord) {
-                chords.append((on, [0x90, n, 80]))
-                chords.append((off, [0x80, n, 0]))
+            markers[on] = letters.name(span.chord, key: a.key)
+            let notes = ChordNotes.upper(span.chord)
+            if rhythm, let onsets = a.onsets, !onsets.isEmpty {
+                // Strike the chord where the accompaniment plays, inside this chord's time.
+                var hits: [Int: UInt8] = [on: 84]                                // always at the change
+                for o in onsets where o.count >= 2 && o[0] >= span.start - 0.03 && o[0] < span.end - 0.03 {
+                    guard let tk = hitTick(o[0]), tk >= on, tk < off else { continue }
+                    let vel = UInt8(max(40, min(118, 50 + 64 * o[1])))
+                    hits[tk] = max(hits[tk] ?? 0, vel)
+                }
+                let ticks = hits.keys.sorted()
+                for (k, tk) in ticks.enumerated() {
+                    let next = k + 1 < ticks.count ? ticks[k + 1] : off
+                    let end = max(tk + 30, next - 10)                            // a hair of air before the next stroke
+                    for n in notes {
+                        chords.append((tk, [0x90, n, hits[tk]!]))
+                        chords.append((min(end, off), [0x80, n, 0]))
+                    }
+                }
+            } else {
+                for n in notes {
+                    chords.append((on, [0x90, n, 80]))
+                    chords.append((off, [0x80, n, 0]))
+                }
             }
             if let b = ChordNotes.bass(span.chord) {
                 bass.append((on, [0x91, b, 95]))

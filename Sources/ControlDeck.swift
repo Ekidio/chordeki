@@ -29,6 +29,14 @@ struct ChordsCard: View {
                 Button("EXTENDED") { session.style.simple = false }
                     .buttonStyle(PillButtonStyle(color: Theme.accent, active: !session.style.simple))
                     .help("7ths, maj7, sus, add9, dim…")
+                Rectangle().fill(Theme.line).frame(width: 1, height: 18).padding(.horizontal, 3)
+                ForEach([(ChordStyle.Numerals.letters, "ABC", "Chord names: C#m, A, E7"),
+                         (.roman, "ROMAN", "Degrees of the key in Roman numerals: vi, IV, V7"),
+                         (.nashville, "NASHVILLE", "Nashville numbers: 6m, 4, 5⁷")], id: \.1) { n, title, tip in
+                    Button(title) { session.style.numerals = n }
+                        .buttonStyle(PillButtonStyle(color: Theme.violet, active: session.style.numerals == n, small: true))
+                        .help(tip + " · grid, NOW / NEXT and PDF (MIDI markers stay letters)")
+                }
             }
             HStack(spacing: 4) {
                 Text("TRANSPOSE").font(.system(size: 9.5, weight: .heavy)).tracking(0.8).foregroundColor(Theme.dim)
@@ -195,8 +203,15 @@ struct ExportCard: View {
                 .buttonStyle(PillButtonStyle(color: Theme.accent, filled: true))
                 .help("A printable chord sheet: guitar shapes and the bars, as shown (⌘P)")
             }
-            Text("MIDI: chords + bass + chord names as markers · \(session.style.simple ? "simple" : "extended")\(session.style.transpose == 0 ? "" : String(format: " · %+d", session.style.transpose))")
+            HStack(spacing: 6) {
+                Button { session.midiRhythm.toggle() } label: {
+                    HStack(spacing: 3) { Image(systemName: "waveform"); Text("RHYTHM") }
+                }
+                .buttonStyle(PillButtonStyle(color: Theme.loop, active: session.midiRhythm, small: true))
+                .help("MIDI chords in the rhythm of the recording's accompaniment (16th grid). Off: one held chord per change.")
+                Text("MIDI: \(session.midiRhythm ? "chords in the song's rhythm" : "held chords") + bass + markers · \(session.style.simple ? "simple" : "extended")\(session.style.transpose == 0 ? "" : String(format: " · %+d", session.style.transpose))")
                 .font(.system(size: 10)).foregroundColor(Theme.dim)
+            }
         }
     }
 }

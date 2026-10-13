@@ -25,6 +25,8 @@ A CHORDEKI egy **EKIDIO SOUND** app. Lásd még: [STEMEKI](https://github.com/Ek
 - **Gitár vagy zongora:** minden akkord gitárfogásként vagy zongora-billentyűzeten (GUITAR / PIANO), a PDF-ben is.
 - **Újraütés:** kitartott akkord bármelyik beaten újrakezdhető – a MIDI-ben új hang, nem kell vágni a DAW-ban.
 - **Ugyanaz a zene máshol:** a CHORDEKI hallja, mely ütemek ugyanazok; javítás után felajánlja, hogy ott is javítsa (**A**).
+- **Római vagy Nashville:** az akkordnevek betűvel (ABC), vagy a hangnem fokszámaiként – római (i, bVII, iv, V7) vagy Nashville (1m, b7, 4m, 5⁷) – a rácsban, a NOW / NEXT panelen és a PDF-ben.
+- **MIDI a dal ritmusában:** bekapcsolt **RHYTHM** mellett a MIDI akkordsávja ott szól, ahol a felvétel kísérete játszik (tizenhatodra igazítva, a dinamikájával), kitartott akkordok helyett.
 - **Export:** MIDI **SYNCED** (a tempó követi a felvételt) vagy **GRID** (egyenletes, egész BPM), és **PDF akkordlap** (⌘P).
 - Önmagát frissíti (Sparkle).
 

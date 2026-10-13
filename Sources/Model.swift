@@ -24,11 +24,13 @@ struct Analysis: Codable, Equatable {
     var barTwins: [[Int]]?
     /// The engine's suggestion for the song's sections.
     var sections: [SectionMark]?
+    /// The accompaniment's rhythm: [time, strength 0…1] of every note start in the harmonic part.
+    var onsets: [[Double]]?
 
     enum CodingKeys: String, CodingKey {
         case duration, tempo, meter, key, beats
         case barTwins = "bar_twins"
-        case sections
+        case sections, onsets
     }
 
     /// A chord run is unsure when its weakest beat is below `unsureWeakest` or its average below `unsureAverage`
@@ -59,6 +61,12 @@ struct ChordSpan: Identifiable, Hashable {
 struct ChordStyle: Equatable {
     var transpose = 0
     var simple = false
+    /// Chord names as letters (C#m), or as scale degrees of the key: Roman (vi) or Nashville (6m).
+    var numerals = Numerals.letters
+
+    enum Numerals: String, CaseIterable {
+        case letters, roman, nashville
+    }
 
     static let sharps = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
     static let flats = ["C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B"]
@@ -77,7 +85,43 @@ struct ChordStyle: Equatable {
 
     func name(_ c: Chord, key: Analysis.Key) -> String {
         guard let r = c.root else { return "N.C." }
-        return (usesFlats(key) ? Self.flats : Self.sharps)[r] + c.quality
+        switch numerals {
+        case .letters: return (usesFlats(key) ? Self.flats : Self.sharps)[r] + c.quality
+        case .roman, .nashville: return degreeName(c, root: r, key: key)
+        }
+    }
+
+    private static let romanDegrees = ["I", "bII", "II", "bIII", "III", "IV", "bV", "V", "bVI", "VI", "bVII", "VII"]
+    private static let nashvilleDegrees = ["1", "b2", "2", "b3", "3", "4", "b5", "5", "b6", "6", "b7", "7"]
+
+    /// The chord as a degree of the (transposed) key: Roman (vi, V7, ii°) or Nashville (6m, 57, 2°).
+    private func degreeName(_ c: Chord, root r: Int, key: Analysis.Key) -> String {
+        let tonic = (key.root + transpose + 120) % 12
+        let step = (r - tonic + 12) % 12
+        let minorish = ["m", "m7", "dim", "m7b5"].contains(c.quality)
+        if numerals == .roman {
+            let base = Self.romanDegrees[step]
+            let numeral = minorish ? base.lowercased() : base
+            let suffix: String
+            switch c.quality {
+            case "", "m": suffix = ""
+            case "m7": suffix = "7"
+            case "dim": suffix = "°"
+            case "m7b5": suffix = "ø7"
+            case "aug": suffix = "+"
+            default: suffix = c.quality
+            }
+            return numeral + suffix
+        }
+        let suffix: String
+        switch c.quality {
+        case "dim": suffix = "°"
+        case "m7b5": suffix = "ø7"
+        case "aug": suffix = "+"
+        default: suffix = c.quality
+        }
+        // A superscript 7, so "57" does not read as fifty-seven.
+        return Self.nashvilleDegrees[step] + suffix.replacingOccurrences(of: "7", with: "⁷")
     }
 
     func keyName(_ key: Analysis.Key) -> String {

@@ -460,6 +460,14 @@ def analyze(path, wav_out=None):
         level.append(20 * np.log10(rms[a:e].mean() + 1e-9))
     first_full = 1 if bars and pos[bars[0][0]] != 0 else 0
     sections = structure(S, np.array(timbre), np.array(level), first_full)
+
+    # The accompaniment's rhythm: note starts in the harmonic part, mid range (drums and bass left out),
+    # for MIDI chords that play when the band plays. [time, strength 0..1]
+    env = librosa.onset.onset_strength(y=y_harm, sr=SR, hop_length=HOP, fmin=150, fmax=3000, n_mels=64)
+    on = librosa.onset.onset_detect(onset_envelope=env, sr=SR, hop_length=HOP, units='frames', backtrack=False, delta=0.08)
+    top = float(env[on].max()) if len(on) else 1.0
+    onsets = [[round(float(t), 3), round(float(v) / top, 2)]
+              for t, v in zip(librosa.frames_to_time(on, sr=SR, hop_length=HOP), env[on])]
     pickup = chords[0] if has_pickup else None
 
     progress(1.0, 'Done')
@@ -472,6 +480,7 @@ def analyze(path, wav_out=None):
         'pickup': pickup,
         'bar_twins': twins,
         'sections': sections,
+        'onsets': onsets,
     }
 
 

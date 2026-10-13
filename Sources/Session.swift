@@ -10,7 +10,16 @@ final class Session: ObservableObject {
     static weak var current: Session?
 
     let player = ChordPlayer()
-    @Published var style = ChordStyle() { didSet { refreshPiano() } }
+    @Published var style = ChordStyle(numerals: ChordStyle.Numerals(rawValue: UserDefaults.standard.string(forKey: "numerals") ?? "") ?? .letters) {
+        didSet {
+            refreshPiano()
+            if style.numerals != oldValue.numerals { UserDefaults.standard.set(style.numerals.rawValue, forKey: "numerals") }
+        }
+    }
+    /// MIDI export: the chord track follows the recording's accompaniment rhythm (off: held chords).
+    @Published var midiRhythm = UserDefaults.standard.bool(forKey: "midiRhythm") {
+        didSet { UserDefaults.standard.set(midiRhythm, forKey: "midiRhythm") }
+    }
     @Published var follow = true
     /// The beat under the playhead (-1 before the first beat). Changes a few times a second, not 60.
     @Published private(set) var currentBeat = -1
@@ -467,7 +476,7 @@ final class Session: ObservableObject {
         guard let song, let a = analysis else { return }
         let panel = NSSavePanel()
         panel.allowedContentTypes = [UTType(filenameExtension: "mid") ?? .data]
-        let suffix = timing == .synced ? "chords" : "chords \(formatBPM(a.tempo.rounded())) BPM"
+        let suffix = (timing == .synced ? "chords" : "chords \(formatBPM(a.tempo.rounded())) BPM") + (midiRhythm ? " rhythm" : "")
         let t = style.transpose == 0 ? "" : String(format: " (%+d)", style.transpose)
         panel.nameFieldStringValue = "\(song.title) - \(suffix)\(t).mid"
         panel.directoryURL = URL(fileURLWithPath: song.sourcePath).deletingLastPathComponent()
@@ -476,7 +485,7 @@ final class Session: ObservableObject {
             : "MIDI on a steady \(formatBPM(a.tempo.rounded())) BPM grid."
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
-            try MidiWriter.data(a, style: style, timing: timing, sections: sections).write(to: url)
+            try MidiWriter.data(a, style: style, timing: timing, sections: sections, rhythm: midiRhythm).write(to: url)
             Toast.shared.show("MIDI saved: \(url.lastPathComponent)")
         } catch {
             Toast.shared.show("Could not save: \(error.localizedDescription)")
