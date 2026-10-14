@@ -240,9 +240,19 @@ final class Session: ObservableObject {
 
     func dismissOffer() { offer = nil }
 
+    /// The instrument chords are heard on: piano (the default, PIANO view), or guitar when GUITAR is chosen.
+    var sound: ChordPlayer.Sound { UserDefaults.standard.string(forKey: "diagramStyle") == "guitar" ? .guitar : .piano }
+
+    /// The notes of a chord on the current instrument (the guitar plays its shape).
+    func soundNotes(_ c: Chord) -> [UInt8] { sound == .guitar ? GuitarChords.notes(c) : ChordNotes.all(c) }
+
+    /// GUITAR / PIANO was switched: the play-along changes instrument too.
+    func soundChanged() { refreshPiano() }
+
     private func refreshPiano() {
         guard let a = analysis else { player.pianoTrack = []; return }
-        player.pianoTrack = a.labelBeats(style, sections: sections).map { (a.beats[$0].t, ChordNotes.all(style.chord(a.beats[$0]))) }
+        player.trackSound = sound
+        player.pianoTrack = a.labelBeats(style, sections: sections).map { (a.beats[$0].t, soundNotes(style.chord(a.beats[$0]))) }
     }
 
     // MARK: Navigation
@@ -311,7 +321,7 @@ final class Session: ObservableObject {
     // MARK: Hearing chords
 
     /// Plays a chord (as shown) on the piano.
-    func hear(_ c: Chord) { player.audition(ChordNotes.all(c)) }
+    func hear(_ c: Chord) { player.audition(soundNotes(c), sound: sound) }
 
     /// P: the chord of the selection, or the one under the playhead.
     func hearCurrent() {
@@ -346,13 +356,8 @@ final class Session: ObservableObject {
         builderOpen = true
     }
 
-    /// The chord the builder starts from: the selection's chord, as shown.
-    var builderStart: Chord {
-        guard let r = selection, let a = analysis else { return .none }
-        return style.chord(a.beats[r.lowerBound])
-    }
-
-    func playNote(_ n: Int) { player.audition([UInt8(max(21, min(108, n)))]) }
+    /// The chord builder is a keyboard: it always sounds on the piano.
+    func playNotes(_ notes: [Int]) { player.audition(notes.sorted().map { UInt8(max(21, min(108, $0))) }, sound: .piano) }
 
     /// Puts a chord (as shown) on every selected beat.
     func setChord(_ c: Chord) {

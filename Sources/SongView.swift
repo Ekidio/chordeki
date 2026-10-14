@@ -191,7 +191,7 @@ private struct PlayheadLine: View {
 
 struct NowPanel: View {
     @EnvironmentObject var session: Session
-    @AppStorage("diagramStyle") private var diagramStyle = "guitar"
+    @AppStorage("diagramStyle") private var diagramStyle = "piano"
     let analysis: Analysis
     let spans: [ChordSpan]
 
@@ -588,7 +588,7 @@ func songChords(_ a: Analysis, _ style: ChordStyle) -> [Chord] {
 /// With beats selected it is the palette: click puts that chord on them.
 struct DiagramStrip: View {
     @EnvironmentObject var session: Session
-    @AppStorage("diagramStyle") private var diagramStyle = "guitar"
+    @AppStorage("diagramStyle") private var diagramStyle = "piano"
     let analysis: Analysis
     let spans: [ChordSpan]
 
@@ -612,17 +612,18 @@ struct DiagramStrip: View {
                         .buttonStyle(PillButtonStyle(small: true))
                         .help("Esc")
                 } else {
-                    Text("CHORDS IN THIS SONG · CLICK TO HEAR ON PIANO")
+                    Text("CHORDS IN THIS SONG · CLICK TO HEAR ON \(diagramStyle == "piano" ? "PIANO" : "GUITAR")")
                         .font(.system(size: 9.5, weight: .heavy)).tracking(1).foregroundColor(Theme.dim)
                     Spacer()
                 }
                 HStack(spacing: 2) {
                     Button { diagramStyle = "guitar" } label: { HStack(spacing: 3) { Image(systemName: "guitars"); Text("GUITAR") } }
-                        .buttonStyle(PillButtonStyle(color: Theme.accent, active: diagramStyle != "piano", small: true))
+                        .buttonStyle(PillButtonStyle(color: Theme.accent, active: diagramStyle == "guitar", small: true))
                     Button { diagramStyle = "piano" } label: { HStack(spacing: 3) { Image(systemName: "pianokeys"); Text("PIANO") } }
                         .buttonStyle(PillButtonStyle(color: Theme.accent, active: diagramStyle == "piano", small: true))
                 }
-                .help("Show the chords as guitar shapes or on piano keys (also in the PDF)")
+                .help("Guitar shapes and guitar sound, or piano keys and piano sound (the PDF follows too)")
+                .onChange(of: diagramStyle) { _, _ in session.soundChanged() }
             }
             .padding(.horizontal, 12).padding(.top, 8)
             ScrollView(.horizontal, showsIndicators: false) {

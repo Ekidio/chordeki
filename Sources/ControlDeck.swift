@@ -118,6 +118,8 @@ struct EditCard: View {
 
 struct TransportCard: View {
     @EnvironmentObject var session: Session
+    @AppStorage("diagramStyle") private var diagramStyle = "piano"
+    private var guitarSound: Bool { diagramStyle == "guitar" }
     let clock: PlayClock
 
     var body: some View {
@@ -150,11 +152,11 @@ struct TransportCard: View {
                         .keyboardShortcut("k", modifiers: [])
                         .help("Metronome on the detected beats, higher on the 1 (K): hear if the grid sits right")
                         Button { player.pianoOn.toggle() } label: {
-                            HStack(spacing: 3) { Image(systemName: "pianokeys"); Text("PIANO") }
+                            HStack(spacing: 3) { Image(systemName: guitarSound ? "guitars" : "pianokeys"); Text(guitarSound ? "GUITAR" : "PIANO") }
                         }
                         .buttonStyle(PillButtonStyle(color: Theme.violet, active: player.pianoOn, small: true))
                         .keyboardShortcut("j", modifiers: [])
-                        .help("PIANO (J): the piano plays the chords along with the song, and ← / → step from chord to chord and play it.")
+                        .help("(J) The chords play along with the song – on the guitar or the piano, as chosen under the grid – and ← / → step from chord to chord and play it.")
                     }
                     MixSlider(player: player)
                 }

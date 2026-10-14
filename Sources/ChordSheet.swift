@@ -39,7 +39,7 @@ enum ChordSheet {
         let bars = a.bars
         let rows = a.gridRows(sections)
         let titles = SectionKind.titles(sections.filter { bars.indices.contains($0.bar) })
-        let piano = UserDefaults.standard.string(forKey: "diagramStyle") == "piano"
+        let piano = UserDefaults.standard.string(forKey: "diagramStyle") != "guitar"          // piano unless GUITAR was chosen
         // Fill pages row by row; a row that starts a section is taller (its title).
         let usable = page.height - 2 * margin - 24             // footer
         var pages: [[GridRow]] = [[]]

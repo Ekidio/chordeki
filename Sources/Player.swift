@@ -43,37 +43,65 @@ final class ChordPlayer: ObservableObject {
     private var startPos = 0.0
     private var timer: Timer?
     private let piano = AVAudioUnitSampler()
+    private let guitar = AVAudioUnitSampler()
     private var pianoIndex = -2
     private var sounding: [UInt8] = []
+    private var soundingOn: AVAudioUnitSampler?
+    private var strum: [DispatchWorkItem] = []
     private var auditionEnd: Task<Void, Never>?
+
+    /// The instrument chords are heard on.
+    enum Sound { case piano, guitar }
+    /// The play-along instrument (set by the session with `pianoTrack`).
+    var trackSound: Sound = .piano
 
     init() {
         engine.attach(node)
         engine.attach(clickNode)
         engine.attach(piano)
+        engine.attach(guitar)
         engine.connect(clickNode, to: engine.mainMixerNode, format: clickFormat)
         engine.connect(piano, to: engine.mainMixerNode, format: nil)
-        // The General MIDI piano that comes with macOS.
+        engine.connect(guitar, to: engine.mainMixerNode, format: nil)
+        // The General MIDI piano and nylon-string acoustic guitar that come with macOS.
         let bank = URL(fileURLWithPath: "/System/Library/Components/CoreAudio.component/Contents/Resources/gs_instruments.dls")
         try? piano.loadSoundBankInstrument(at: bank, program: 0,
                                            bankMSB: UInt8(kAUSampler_DefaultMelodicBankMSB), bankLSB: UInt8(kAUSampler_DefaultBankLSB))
+        try? guitar.loadSoundBankInstrument(at: bank, program: 24,                 // Nylon-str. Gt: warm, clearly acoustic
+                                            bankMSB: UInt8(kAUSampler_DefaultMelodicBankMSB), bankLSB: UInt8(kAUSampler_DefaultBankLSB))
         applyMix()
     }
 
     private func applyMix() {
         node.volume = min(1, 2 * (1 - mix))
         piano.volume = min(1, 2 * mix)
+        guitar.volume = min(1, 2 * mix)
+    }
+
+    /// Starts a chord: at once on the piano, strummed low to high on the guitar.
+    private func strike(_ notes: [UInt8], on sound: Sound, velocity: UInt8) {
+        let sampler = sound == .guitar ? guitar : piano
+        soundingOn = sampler
+        sounding = notes
+        if sound == .piano {
+            for n in notes { sampler.startNote(n, withVelocity: velocity, onChannel: 0) }
+            return
+        }
+        for (k, n) in notes.sorted().enumerated() {
+            let item = DispatchWorkItem { sampler.startNote(n, withVelocity: velocity, onChannel: 0) }
+            strum.append(item)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.022 * Double(k), execute: item)
+        }
     }
 
     // MARK: Piano
 
-    /// Plays one chord on the piano for a moment.
-    func audition(_ notes: [UInt8]) {
+    /// Plays one chord for a moment, on the piano or (strummed) on the guitar.
+    func audition(_ notes: [UInt8], sound: Sound = .piano) {
         guard !notes.isEmpty else { return }
         do { if !engine.isRunning { try engine.start() } } catch { return }
         pianoStop()
-        for n in notes { piano.startNote(n, withVelocity: 92, onChannel: 0) }
-        sounding = notes
+        strike(notes, on: sound, velocity: 92)
         auditionEnd?.cancel()
         auditionEnd = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 1_800_000_000)
@@ -83,7 +111,9 @@ final class ChordPlayer: ObservableObject {
     }
 
     private func pianoStop() {
-        for n in sounding { piano.stopNote(n, onChannel: 0) }
+        strum.forEach { $0.cancel() }
+        strum = []
+        for n in sounding { soundingOn?.stopNote(n, onChannel: 0) }
         sounding = []
     }
 
@@ -101,9 +131,7 @@ final class ChordPlayer: ObservableObject {
         auditionEnd?.cancel()
         pianoStop()
         guard i >= 0 else { return }
-        let notes = pianoTrack[i].notes
-        for n in notes { piano.startNote(n, withVelocity: 78, onChannel: 0) }
-        sounding = notes
+        strike(pianoTrack[i].notes, on: trackSound, velocity: 78)
     }
 
     /// Loads a song's audio. It plays before the analysis is there (no beats yet); when the analysis

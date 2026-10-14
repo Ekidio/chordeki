@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Build a chord by ear on a big piano and put it on the selected beats.
-/// Click keys to add or remove notes (each one sounds); the type buttons build a chord on the lowest note.
+/// It starts empty: click the notes one by one; after every click all the notes so far sound together.
 struct ChordBuilderView: View {
     @EnvironmentObject var session: Session
     @Environment(\.dismiss) private var dismiss
@@ -9,12 +9,6 @@ struct ChordBuilderView: View {
 
     static let low = 48          // C3
     static let high = 83         // B5
-
-    private static let types: [(String, String)] = [
-        ("", "MAJ"), ("m", "MIN"), ("7", "7"), ("maj7", "MAJ7"), ("m7", "M7"), ("6", "6"), ("m6", "M6"),
-        ("9", "9"), ("add9", "ADD9"), ("sus2", "SUS2"), ("sus4", "SUS4"), ("7sus4", "7SUS4"),
-        ("dim", "DIM"), ("dim7", "DIM7"), ("m7b5", "M7♭5"), ("aug", "AUG"),
-    ]
 
     var body: some View {
         let chord = ChordNotes.recognize(notes)
@@ -26,7 +20,7 @@ struct ChordBuilderView: View {
                     Text("for " + label.lowercased()).font(Theme.mono(11, .semibold)).foregroundColor(Theme.dim)
                 }
                 Spacer()
-                Text("Click keys to add or remove notes · each one sounds")
+                Text("Click the notes one by one · all of them sound together · click again to take one out")
                     .font(.system(size: 11)).foregroundColor(Theme.dim)
             }
 
@@ -50,34 +44,15 @@ struct ChordBuilderView: View {
 
             BigKeyboard(notes: notes, color: Theme.chordColor(chord.root)) { n in
                 if let i = notes.firstIndex(of: n) { notes.remove(at: i) } else { notes.append(n) }
-                session.playNote(n)
+                if !notes.isEmpty { session.playNotes(notes) }            // the whole chord so far
             }
             .frame(height: 170)
 
-            // Chord types on the lowest note (or C4)
-            VStack(alignment: .leading, spacing: 6) {
-                Text("CHORD TYPE ON THE LOWEST NOTE").font(.system(size: 9.5, weight: .heavy)).tracking(1.2).foregroundColor(Theme.dim)
-                HStack(spacing: 4) {
-                    ForEach(Self.types, id: \.0) { q, title in
-                        Button(title) { applyType(q) }
-                            .buttonStyle(PillButtonStyle(color: Theme.accent, small: true))
-                    }
-                }
-                HStack(spacing: 4) {
-                    Button { invert() } label: { HStack(spacing: 3) { Image(systemName: "arrow.up.and.down"); Text("INVERT") } }
-                        .buttonStyle(PillButtonStyle(small: true)).disabled(notes.count < 2).modifier(DisabledDim())
-                        .help("The lowest note goes up an octave")
-                    Button { shift(-12) } label: { Text("OCT −") }
-                        .buttonStyle(PillButtonStyle(small: true)).disabled(notes.isEmpty).modifier(DisabledDim())
-                    Button { shift(12) } label: { Text("OCT +") }
-                        .buttonStyle(PillButtonStyle(small: true)).disabled(notes.isEmpty).modifier(DisabledDim())
-                    Button("CLEAR") { notes = [] }
-                        .buttonStyle(PillButtonStyle(small: true)).disabled(notes.isEmpty).modifier(DisabledDim())
-                }
-            }
-
             HStack(spacing: 8) {
-                Button { session.player.audition(notes.map { UInt8($0) }) } label: {
+                Button("CLEAR") { notes = [] }
+                    .buttonStyle(PillButtonStyle())
+                    .disabled(notes.isEmpty).modifier(DisabledDim())
+                Button { session.playNotes(notes) } label: {
                     HStack(spacing: 5) { Image(systemName: "pianokeys"); Text("PLAY") }
                 }
                 .buttonStyle(PillButtonStyle(color: Theme.violet, filled: true))
@@ -101,7 +76,7 @@ struct ChordBuilderView: View {
         .frame(width: 920)
         .background(Theme.bg)
         .preferredColorScheme(.dark)
-        .onAppear { notes = Self.startNotes(session.builderStart) }
+        .onAppear { notes = [] }
     }
 
     // MARK: Actions
@@ -112,55 +87,27 @@ struct ChordBuilderView: View {
         dismiss()
     }
 
-    private func applyType(_ q: String) {
-        let root = notes.min() ?? 60
-        let ivs = ChordNotes.recognizeIntervals[q] ?? [0, 4, 7]
-        notes = ivs.map { root + $0 }.filter { $0 <= Self.high + 12 }
-        session.player.audition(notes.map { UInt8($0) })
-    }
-
-    private func invert() {
-        guard let low = notes.min(), let i = notes.firstIndex(of: low) else { return }
-        notes[i] = low + 12
-        session.player.audition(notes.map { UInt8($0) })
-    }
-
-    private func shift(_ d: Int) {
-        let moved = notes.map { $0 + d }
-        guard let lo = moved.min(), let hi = moved.max(), lo >= Self.low - 12, hi <= Self.high + 12 else { return }
-        notes = moved
-        session.player.audition(notes.map { UInt8($0) })
-    }
-
-    /// The selection's chord as notes on the keyboard: its voicing, with a different bass note below it.
-    static func startNotes(_ c: Chord) -> [Int] {
-        guard c.root != nil else { return [] }
-        if let n = c.notes, !n.isEmpty { return n }
-        var upper = ChordNotes.upper(c).map(Int.init)
-        if let b = c.bass, b != c.root, let lo = upper.min() {
-            var bassNote = lo - ((lo - b) % 12 + 12) % 12
-            if bassNote == lo { bassNote -= 12 }
-            upper.insert(bassNote, at: 0)
-        }
-        return upper
-    }
-
     static func noteName(_ n: Int) -> String {
         ChordStyle.sharps[((n % 12) + 12) % 12] + "\(n / 12 - 1)"
     }
 }
 
 /// Three octaves of piano keys (C3–B5) to click.
+/// The keys are only drawn; one tap area over the whole keyboard works out which key was hit
+/// (black keys first, they sit on top).
 private struct BigKeyboard: View {
     let notes: [Int]
     let color: Color
     let toggle: (Int) -> Void
 
     private static let whitePCs = [0, 2, 4, 5, 7, 9, 11]
+    private static var whites: [Int] {
+        (ChordBuilderView.low...ChordBuilderView.high).filter { whitePCs.contains($0 % 12) }
+    }
 
     var body: some View {
         GeometryReader { g in
-            let whites = (ChordBuilderView.low...ChordBuilderView.high).filter { Self.whitePCs.contains($0 % 12) }
+            let whites = Self.whites
             let ww = g.size.width / CGFloat(whites.count)
             let bw = ww * 0.6, bh = g.size.height * 0.62
             let lowest = notes.min()
@@ -180,8 +127,6 @@ private struct BigKeyboard: View {
                     }
                     .frame(width: ww - 1, height: g.size.height)
                     .offset(x: CGFloat(k) * ww)
-                    .contentShape(Rectangle())
-                    .onTapGesture { toggle(n) }
                 }
                 ForEach(Array(whites.enumerated()), id: \.element) { k, n in
                     if [0, 2, 5, 7, 9].contains(n % 12), n + 1 <= ChordBuilderView.high {
@@ -194,11 +139,36 @@ private struct BigKeyboard: View {
                             }
                             .frame(width: bw, height: bh)
                             .offset(x: CGFloat(k + 1) * ww - bw / 2)
-                            .contentShape(Rectangle())
-                            .onTapGesture { toggle(b) }
                     }
                 }
             }
+            .allowsHitTesting(false)
+            .frame(width: g.size.width, height: g.size.height, alignment: .topLeading)
+            .overlay {
+                Color.clear
+                    .contentShape(Rectangle())
+                    .gesture(SpatialTapGesture().onEnded { tap in
+                        if let n = Self.key(at: tap.location, ww: ww, bw: bw, bh: bh, whites: whites) { toggle(n) }
+                    })
+            }
         }
+    }
+
+    /// The key under a point: a black key if the point is on one, otherwise the white key below it.
+    static func key(at p: CGPoint, ww: CGFloat, bw: CGFloat, bh: CGFloat, whites: [Int]) -> Int? {
+        let k = Int(p.x / ww)
+        guard whites.indices.contains(k) else { return nil }
+        if p.y <= bh {
+            // the black key right of this white key, or left of it
+            let n = whites[k]
+            let rightEdge = CGFloat(k + 1) * ww
+            if [0, 2, 5, 7, 9].contains(n % 12), n + 1 <= ChordBuilderView.high, p.x >= rightEdge - bw / 2 { return n + 1 }
+            if k > 0 {
+                let prev = whites[k - 1]
+                let leftEdge = CGFloat(k) * ww
+                if [0, 2, 5, 7, 9].contains(prev % 12), p.x <= leftEdge + bw / 2 { return prev + 1 }
+            }
+        }
+        return whites[k]
     }
 }

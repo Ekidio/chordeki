@@ -28,6 +28,15 @@ enum GuitarChords {
         "dim": [-1, 0, 1, 2, 1, -1], "m7b5": [-1, 0, 1, 0, 1, -1], "aug": [-1, 0, 3, 2, 2, 1],
     ]
 
+    /// The notes a guitar plays for a chord: its shape (open strings E2 A2 D3 G3 B3 E4 + frets),
+    /// a hand-built chord's own notes, or the standard voicing when there is no shape.
+    static func notes(_ c: Chord) -> [UInt8] {
+        if let n = c.notes, !n.isEmpty { return n.sorted().map { UInt8(max(21, min(108, $0))) } }
+        guard let v = voicing(c) else { return ChordNotes.all(c) }
+        let open = [40, 45, 50, 55, 59, 64]
+        return v.frets.enumerated().compactMap { s, f in f < 0 ? nil : UInt8(open[s] + f) }
+    }
+
     static func voicing(_ chord: Chord) -> Voicing? {
         guard let root = chord.root else { return nil }
         if let s = open[ChordStyle.sharps[root] + chord.quality] {
@@ -184,7 +193,7 @@ struct PianoChord: View {
 struct ChordPicture: View {
     let chord: Chord
     var color: Color = Theme.text
-    @AppStorage("diagramStyle") private var diagramStyle = "guitar"
+    @AppStorage("diagramStyle") private var diagramStyle = "piano"
 
     var body: some View {
         if diagramStyle == "piano" {
