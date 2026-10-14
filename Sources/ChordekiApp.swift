@@ -69,8 +69,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.appearance = NSAppearance(named: .darkAqua)
         NSEvent.addLocalMonitorForEvents(matching: .keyDown) { e in
+            // Not while typing, and not in a sheet (the chord builder has its own keys).
             guard e.modifierFlags.intersection([.command, .option, .control]).isEmpty,
-                  !(NSApp.keyWindow?.firstResponder is NSTextView) else { return e }
+                  !(NSApp.keyWindow?.firstResponder is NSTextView),
+                  NSApp.keyWindow?.isSheet != true else { return e }
             let act: (@MainActor (Session) -> Void)?
             switch e.keyCode {
             // ← / →: with PIANO on, chord by chord (heard on the piano); otherwise a bar back / forward
@@ -83,6 +85,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             case 32: act = e.modifierFlags.contains(.shift) ? { $0.stepUnsure(-1) } : { $0.stepUnsure(1) }  // U / ⇧U
             case 31: act = { $0.markChecked() }           // O: sounds right
             case 0: act = { $0.applyOffer() }             // A: apply the fix to the same music elsewhere
+            case 11: act = { $0.openBuilder() }           // B: build a chord on the piano for the selection
             default: act = nil
             }
             guard let act else { return e }

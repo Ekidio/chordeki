@@ -157,8 +157,9 @@ final class Session: ObservableObject {
         var bars = Set<Int>()
         let loc = a.beatLocations
         for (t, src) in a.twinBeats(of: range) {
-            let want = ChordEdit(root: a.beats[src].root, quality: a.beats[src].quality, restart: a.beats[src].restart)
+            let want = edit(of: a.beats[src], restart: a.beats[src].restart)
             if a.beats[t].root != want.root || a.beats[t].quality != want.quality
+                || a.beats[t].bass != want.bass || a.beats[t].notes != want.notes
                 || (want.restart == true && a.beats[t].restart != true) {
                 edits[t] = want
                 bars.insert(loc[t].bar)
@@ -324,8 +325,34 @@ final class Session: ObservableObject {
 
     /// What the engine would call the chord shown as `c` (transposition taken off).
     private func raw(_ c: Chord) -> ChordEdit {
-        ChordEdit(root: c.root.map { ($0 - style.transpose + 120) % 12 }, quality: c.quality)
+        ChordEdit(root: c.root.map { ($0 - style.transpose + 120) % 12 }, quality: c.quality,
+                  bass: c.bass.map { ($0 - style.transpose + 120) % 12 },
+                  notes: c.notes.map { $0.map { $0 - style.transpose } })
     }
+
+    /// A beat's chord as an edit, everything included.
+    private func edit(of b: Analysis.Beat, restart: Bool? = nil) -> ChordEdit {
+        ChordEdit(root: b.root, quality: b.quality, restart: restart, bass: b.bass, notes: b.notes)
+    }
+
+    // MARK: Chord builder
+
+    /// The piano chord builder is open (for the selection).
+    @Published var builderOpen = false
+
+    func openBuilder(_ beat: Int? = nil) {
+        if let beat { ensureSelected(beat) }
+        guard selection != nil else { Toast.shared.show("Select a beat first"); return }
+        builderOpen = true
+    }
+
+    /// The chord the builder starts from: the selection's chord, as shown.
+    var builderStart: Chord {
+        guard let r = selection, let a = analysis else { return .none }
+        return style.chord(a.beats[r.lowerBound])
+    }
+
+    func playNote(_ n: Int) { player.audition([UInt8(max(21, min(108, n)))]) }
 
     /// Puts a chord (as shown) on every selected beat.
     func setChord(_ c: Chord) {
@@ -346,14 +373,14 @@ final class Session: ObservableObject {
         guard let a = analysis, a.beats.indices.contains(i), a.beats[i].root != nil else { return }
         anchor = i
         selection = i...i
-        change { $0[i] = ChordEdit(root: a.beats[i].root, quality: a.beats[i].quality, restart: true) }
+        change { $0[i] = edit(of: a.beats[i], restart: true) }
         hear(style.chord(a.beats[i]))
         proposeTwins(i...i)
     }
 
     func copy() {
         guard let r = selection, let a = analysis else { return }
-        clipboard = r.map { ChordEdit(root: a.beats[$0].root, quality: a.beats[$0].quality, restart: a.beats[$0].restart) }
+        clipboard = r.map { edit(of: a.beats[$0], restart: a.beats[$0].restart) }
         Toast.shared.show(clipboard.count == 1 ? "Copied 1 beat" : "Copied \(clipboard.count) beats")
     }
 
@@ -377,7 +404,7 @@ final class Session: ObservableObject {
     func deleteChord() {
         guard let r = selection, let a = analysis else { return }
         let prev = r.lowerBound > 0 ? a.beats[r.lowerBound - 1] : nil
-        let fill = ChordEdit(root: prev?.root, quality: prev?.quality ?? "")
+        let fill = prev.map { edit(of: $0) } ?? ChordEdit(root: nil, quality: "")
         change { edits in for i in r { edits[i] = fill } }
         let name = prev.map { style.name(style.chord($0), key: a.key) } ?? "N.C."
         Toast.shared.show("Chord removed: \(name) goes on")
@@ -435,7 +462,8 @@ final class Session: ObservableObject {
         body(&edits)
         // An edit equal to what was detected is no edit.
         for (i, e) in edits where detected.beats.indices.contains(i)
-            && detected.beats[i].root == e.root && detected.beats[i].quality == e.quality && e.restart != true {
+            && detected.beats[i].root == e.root && detected.beats[i].quality == e.quality && e.restart != true
+            && e.bass == nil && e.notes == nil {
             edits[i] = nil
         }
         storeChange(Snapshot(edits: edits, sections: song.sections))

@@ -38,6 +38,7 @@ struct ContentView: View {
         .foregroundColor(Theme.text)
         .overlay(alignment: .bottom) { ToastView().padding(.bottom, 120) }
         .overlay(dropping ? DropOverlay() : nil)
+        .sheet(isPresented: $session.builderOpen) { ChordBuilderView().environmentObject(session) }
         .overlay { if splash { SplashView { splash = false } } }
         .onDrop(of: [.fileURL], isTargeted: $dropping) { providers in
             loadURLs(providers) { library.add($0) }

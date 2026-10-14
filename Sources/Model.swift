@@ -14,6 +14,8 @@ struct Analysis: Codable, Equatable {
         var quality: String       // "", "m", "7", "maj7", "m7", "sus2", ...
         var conf: Double?         // 0…1: how sure the engine is of this beat's chord
         var restart: Bool?        // set by hand: the same chord is struck again here (a new chord in the grid and MIDI)
+        var bass: Int?            // set by hand: a bass note other than the root
+        var notes: [Int]?         // set by hand: exact MIDI notes (a chord built on the piano)
     }
     var duration: Double
     var tempo: Double
@@ -43,6 +45,10 @@ struct Analysis: Codable, Equatable {
 struct Chord: Hashable {
     var root: Int?
     var quality: String
+    /// A bass note other than the root (D/F#), pitch class.
+    var bass: Int? = nil
+    /// Exact MIDI notes of a chord built by hand on the piano (nil: the standard voicing).
+    var notes: [Int]? = nil
 
     static let none = Chord(root: nil, quality: "")
 }
@@ -75,7 +81,10 @@ struct ChordStyle: Equatable {
 
     func chord(_ b: Analysis.Beat) -> Chord {
         guard let r = b.root else { return .none }
-        return Chord(root: (r + transpose + 120) % 12, quality: simple ? b.base : b.quality)
+        if simple { return Chord(root: (r + transpose + 120) % 12, quality: b.base) }
+        return Chord(root: (r + transpose + 120) % 12, quality: b.quality,
+                     bass: b.bass.map { ($0 + transpose + 120) % 12 },
+                     notes: b.notes.map { $0.map { $0 + transpose } })
     }
 
     func usesFlats(_ key: Analysis.Key) -> Bool {
@@ -86,7 +95,10 @@ struct ChordStyle: Equatable {
     func name(_ c: Chord, key: Analysis.Key) -> String {
         guard let r = c.root else { return "N.C." }
         switch numerals {
-        case .letters: return (usesFlats(key) ? Self.flats : Self.sharps)[r] + c.quality
+        case .letters:
+            let names = usesFlats(key) ? Self.flats : Self.sharps
+            let slash = c.bass.flatMap { $0 == r ? nil : "/" + names[$0] } ?? ""
+            return names[r] + c.quality + slash
         case .roman, .nashville: return degreeName(c, root: r, key: key)
         }
     }
@@ -98,7 +110,8 @@ struct ChordStyle: Equatable {
     private func degreeName(_ c: Chord, root r: Int, key: Analysis.Key) -> String {
         let tonic = (key.root + transpose + 120) % 12
         let step = (r - tonic + 12) % 12
-        let minorish = ["m", "m7", "dim", "m7b5"].contains(c.quality)
+        let minorish = ChordEdit.base(of: c.quality) == "m"
+        let bassStep = c.bass.flatMap { $0 == r ? nil : ($0 - tonic + 12) % 12 }
         if numerals == .roman {
             let base = Self.romanDegrees[step]
             let numeral = minorish ? base.lowercased() : base
@@ -109,9 +122,12 @@ struct ChordStyle: Equatable {
             case "dim": suffix = "°"
             case "m7b5": suffix = "ø7"
             case "aug": suffix = "+"
-            default: suffix = c.quality
+            case "dim7": suffix = "°7"
+            default:
+                // Lower case already says minor: "m9" → "9", "m6" → "6", "mMaj7" → "Maj7"
+                suffix = minorish && c.quality.hasPrefix("m") && !c.quality.hasPrefix("maj") ? String(c.quality.dropFirst()) : c.quality
             }
-            return numeral + suffix
+            return numeral + suffix + (bassStep.map { "/" + Self.romanDegrees[$0] } ?? "")
         }
         let suffix: String
         switch c.quality {
@@ -122,6 +138,7 @@ struct ChordStyle: Equatable {
         }
         // A superscript 7, so "57" does not read as fifty-seven.
         return Self.nashvilleDegrees[step] + suffix.replacingOccurrences(of: "7", with: "⁷")
+            + (bassStep.map { "/" + Self.nashvilleDegrees[$0] } ?? "")
     }
 
     func keyName(_ key: Analysis.Key) -> String {
@@ -243,10 +260,13 @@ struct ChordEdit: Codable, Equatable {
     var quality: String
     /// Strike the chord again on this beat, even if the one before is the same.
     var restart: Bool? = nil
+    var bass: Int? = nil
+    var notes: [Int]? = nil
 
     /// The plain triad of a chord type, for SIMPLE view.
     static func base(of quality: String) -> String {
-        ["m", "m7", "dim", "m7b5"].contains(quality) ? "m" : ""
+        if ["dim", "dim7", "m7b5"].contains(quality) { return "m" }
+        return quality.hasPrefix("m") && !quality.hasPrefix("maj") ? "m" : ""
     }
 }
 
@@ -261,12 +281,47 @@ enum ChordNotes {
     /// Chord tones with the root between F3 and E4.
     static func upper(_ c: Chord) -> [UInt8] {
         guard let r = c.root else { return [] }
+        if let notes = c.notes, !notes.isEmpty {                              // built by hand: exactly these
+            return notes.sorted().map { UInt8(max(21, min(108, $0))) }
+        }
         let base = 53 + (r - 5 + 12) % 12
-        return (intervals[c.quality] ?? [0, 4, 7]).map { UInt8(base + $0) }
+        return (intervals[c.quality] ?? recognizeIntervals[c.quality] ?? [0, 4, 7]).map { UInt8(base + $0) }
     }
 
-    /// The root in the bass, C2…B2.
-    static func bass(_ c: Chord) -> UInt8? { c.root.map { UInt8(36 + $0) } }
+    /// The bass note (or the root), C2…B2.
+    static func bass(_ c: Chord) -> UInt8? { (c.bass ?? c.root).map { UInt8(36 + $0) } }
+
+    /// Chord types the piano builder recognizes (intervals above the root).
+    static let recognizeIntervals: [String: [Int]] = [
+        "": [0, 4, 7], "m": [0, 3, 7], "5": [0, 7],
+        "6": [0, 4, 7, 9], "m6": [0, 3, 7, 9], "6/9": [0, 2, 4, 7, 9],
+        "7": [0, 4, 7, 10], "maj7": [0, 4, 7, 11], "m7": [0, 3, 7, 10], "mMaj7": [0, 3, 7, 11],
+        "9": [0, 2, 4, 7, 10], "maj9": [0, 2, 4, 7, 11], "m9": [0, 2, 3, 7, 10],
+        "11": [0, 2, 4, 5, 7, 10], "m11": [0, 2, 3, 5, 7, 10], "13": [0, 2, 4, 7, 9, 10],
+        "7b9": [0, 1, 4, 7, 10], "7#9": [0, 3, 4, 7, 10], "7sus4": [0, 5, 7, 10], "7#5": [0, 4, 8, 10],
+        "add9": [0, 2, 4, 7], "madd9": [0, 2, 3, 7], "add11": [0, 4, 5, 7],
+        "sus2": [0, 2, 7], "sus4": [0, 5, 7],
+        "dim": [0, 3, 6], "dim7": [0, 3, 6, 9], "m7b5": [0, 3, 6, 10], "aug": [0, 4, 8],
+    ]
+
+    /// Names a set of notes played on the piano: root, chord type and a bass note other than the root.
+    /// Unknown combinations become "(custom)" on the lowest note; they still play exactly as built.
+    static func recognize(_ notes: [Int]) -> Chord {
+        let sorted = notes.sorted()
+        guard let lowest = sorted.first else { return .none }
+        let pcs = Set(sorted.map { (($0 % 12) + 12) % 12 })
+        let bassPC = ((lowest % 12) + 12) % 12
+        if pcs.count == 1 { return Chord(root: bassPC, quality: "5", notes: sorted) }
+        // Try the bass note as root first (no slash), then every other note (a slash chord).
+        let roots = [bassPC] + pcs.subtracting([bassPC]).sorted()
+        for r in roots {
+            let set = Set(pcs.map { ($0 - r + 12) % 12 })
+            if let q = recognizeIntervals.first(where: { Set($0.value) == set })?.key {
+                return Chord(root: r, quality: q, bass: r == bassPC ? nil : bassPC, notes: sorted)
+            }
+        }
+        return Chord(root: bassPC, quality: "(custom)", notes: sorted)
+    }
 
     static func all(_ c: Chord) -> [UInt8] { (bass(c).map { [$0] } ?? []) + upper(c) }
 }
@@ -300,6 +355,8 @@ struct Song: Codable, Identifiable, Equatable {
             a.beats[i].quality = e.quality
             a.beats[i].base = ChordEdit.base(of: e.quality)
             a.beats[i].restart = e.restart
+            a.beats[i].bass = e.bass
+            a.beats[i].notes = e.notes
         }
         return a
     }

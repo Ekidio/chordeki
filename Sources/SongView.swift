@@ -547,6 +547,7 @@ struct ChordMenu: View {
                     }
                 }
             }
+            Button("Build Chord on Piano…  (B)") { session.openBuilder(beat) }
             Button("No Chord (N.C.)") { session.ensureSelected(beat); session.setChord(.none) }
             Button("Strike \(style.name(shown, key: a.key)) Again Here  (splits the held chord, also in MIDI)") {
                 session.strikeAgain(beat)
@@ -602,6 +603,11 @@ struct DiagramStrip: View {
                     Text("CLICK A CHORD TO PUT IT ON \(label)")
                         .font(.system(size: 9.5, weight: .heavy)).tracking(1).foregroundColor(Theme.accent)
                     Spacer()
+                    Button { session.openBuilder() } label: {
+                        HStack(spacing: 3) { Image(systemName: "pianokeys"); Text("BUILD ON PIANO") }
+                    }
+                    .buttonStyle(PillButtonStyle(color: Theme.violet, active: true, small: true))
+                    .help("None of these fits? Build the chord by ear on a big piano (B)")
                     Button("CLEAR SELECTION") { session.clearSelection() }
                         .buttonStyle(PillButtonStyle(small: true))
                         .help("Esc")

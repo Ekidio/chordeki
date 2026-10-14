@@ -119,12 +119,29 @@ struct PianoChord: View {
     var body: some View {
         Canvas { ctx, size in
             let lit: Set<Int>
-            if let r = chord.root {
-                lit = Set((ChordNotes.intervals[chord.quality] ?? [0, 4, 7]).map { r + $0 })
+            if let r = chord.root, let notes = chord.notes, let low = notes.min() {
+                // A chord built by hand: its own voicing, from the bass up (folded into two octaves)
+                let start = chord.bass ?? r
+                lit = Set(notes.map { n -> Int in
+                    var k = start + (n - low)
+                    while k > 23 { k -= 12 }
+                    return k
+                })
+            } else if let r = chord.root {
+                lit = Set((ChordNotes.intervals[chord.quality] ?? ChordNotes.recognizeIntervals[chord.quality] ?? [0, 4, 7]).map { r + $0 })
             } else {
                 lit = []
             }
-            let root = chord.root
+            let root: Int? = {
+                guard let r = chord.root else { return nil }
+                if let notes = chord.notes, let low = notes.min() {
+                    // the root's place in the hand-built voicing
+                    let start = chord.bass ?? r
+                    return notes.map { start + ($0 - low) }.map { var k = $0; while k > 23 { k -= 12 }; return k }
+                        .first { ($0 % 12) == r }
+                }
+                return r
+            }()
             let litColor = paper ? Color(white: 0.55) : Theme.chordColor(chord.root)
             let rootColor = paper ? Color(white: 0.2) : Theme.chordColor(chord.root)
             let ww = size.width / 14, wh = size.height
