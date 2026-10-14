@@ -2,7 +2,7 @@
 
 [🇬🇧 English](README.md) · 🇭🇺 Magyar
 
-**▶ Weboldal:** [ekidio.github.io/chordeki/hu](https://ekidio.github.io/chordeki/hu/) · **⬇ Letöltés:** [legújabb kiadás (DMG)](https://github.com/Ekidio/chordeki/releases/latest)
+**▶ Weboldal:** [ekidio.github.io/chordeki/hu](https://ekidio.github.io/chordeki/hu/) · **⬇ Letöltés:** [CHORDEKI.dmg (legújabb)](https://github.com/Ekidio/chordeki/releases/latest/download/CHORDEKI.dmg) · [kiadási megjegyzések](https://github.com/Ekidio/chordeki/releases/latest)
 
 ![CHORDEKI](docs/assets/chordeki-main.png)
 

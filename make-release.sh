@@ -27,6 +27,10 @@ echo "→ appcast.xml (EdDSA aláírással a kulcskarikából)"
     -o "$OUT/appcast.xml" \
     "$OUT"
 
+# A copy with a fixed name, so the website's button (…/releases/latest/download/CHORDEKI.dmg) always gets the newest.
+# Made after the appcast, so the appcast lists the versioned DMG only.
+cp "$OUT/CHORDEKI-$VERSION.dmg" "$OUT/CHORDEKI.dmg"
+
 cat <<EOF
 
 ✓ Kiadás előkészítve: $OUT
@@ -34,7 +38,7 @@ cat <<EOF
 Feltöltés a GitHubra:
   1. https://github.com/$GITHUB_REPO/releases/new
   2. Tag: $TAG   Cím: CHORDEKI $VERSION
-  3. Húzd be MINDKÉT fájlt:  $OUT/CHORDEKI-$VERSION.dmg  és  $OUT/appcast.xml
+  3. Húzd be MINDHÁROM fájlt:  $OUT/CHORDEKI-$VERSION.dmg,  $OUT/CHORDEKI.dmg  és  $OUT/appcast.xml
   4. „Set as the latest release” legyen bejelölve → Publish release
 
 A meglévő felhasználók appja 24 órán belül felajánlja a frissítést.
