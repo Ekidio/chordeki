@@ -34,7 +34,13 @@ enum GuitarChords {
         if let n = c.notes, !n.isEmpty { return n.sorted().map { UInt8(max(21, min(108, $0))) } }
         guard let v = voicing(c) else { return ChordNotes.all(c) }
         let open = [40, 45, 50, 55, 59, 64]
-        return v.frets.enumerated().compactMap { s, f in f < 0 ? nil : UInt8(open[s] + f) }
+        var shape = v.frets.enumerated().compactMap { s, f in f < 0 ? nil : UInt8(open[s] + f) }
+        // An inversion: its bass note at the bottom (E2…D#3), the shape's notes above it
+        if let b = c.bass, b != c.root {
+            let low = UInt8(40 + (b - 4 + 12) % 12)
+            shape = [low] + shape.filter { $0 > low }
+        }
+        return shape
     }
 
     static func voicing(_ chord: Chord) -> Voicing? {
@@ -137,7 +143,9 @@ struct PianoChord: View {
                     return k
                 })
             } else if let r = chord.root {
-                lit = Set((ChordNotes.intervals[chord.quality] ?? ChordNotes.recognizeIntervals[chord.quality] ?? [0, 4, 7]).map { r + $0 })
+                var tones = Set((ChordNotes.intervals[chord.quality] ?? ChordNotes.recognizeIntervals[chord.quality] ?? [0, 4, 7]).map { r + $0 })
+                if let b = chord.bass, b != r { tones.insert(b) }       // the inversion's bass key lit too
+                lit = tones
             } else {
                 lit = []
             }

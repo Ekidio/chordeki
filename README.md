@@ -26,6 +26,7 @@ CHORDEKI is an **EKIDIO SOUND** app. See also: [STEMEKI](https://github.com/Ekid
 - **Strike again:** a held chord can start again on any beat – a new note in the MIDI, no cutting in the DAW.
 - **Build a chord on the piano:** none of the detected chords fits? Press **B** (or right-click → Build Chord on Piano…) and draw the chord note by note on a big keyboard: every click adds a note and you hear all the notes so far together; click a note again to take it out. CHORDEKI names it (Cmaj7, D/F#, F#m9…), and it plays – also in the MIDI – exactly as you built it.
 - **Same music elsewhere:** CHORDEKI hears which bars are the same music; after a fix it offers to put it there too (**A**).
+- **Inversions (BASS /):** switch it on and CHORDEKI shows where the bass plays another note of the chord – Em/B, F/A, Cmaj7/G – in the names, the sound and the MIDI bass track.
 - **Roman or Nashville:** chord names as letters (ABC), or as degrees of the key – Roman (i, bVII, iv, V7) or Nashville (1m, b7, 4m, 5⁷) – in the grid, NOW / NEXT and the PDF.
 - **MIDI in the song's rhythm:** with **RHYTHM** on, the MIDI chord track plays where the recording's accompaniment plays (16th grid, with its dynamics) instead of held chords.
 - **Export:** MIDI **SYNCED** (tempo map follows the recording) or **GRID** (steady whole BPM), and a **PDF chord sheet** (⌘P).

@@ -10,10 +10,12 @@ final class Session: ObservableObject {
     static weak var current: Session?
 
     let player = ChordPlayer()
-    @Published var style = ChordStyle(numerals: ChordStyle.Numerals(rawValue: UserDefaults.standard.string(forKey: "numerals") ?? "") ?? .letters) {
+    @Published var style = ChordStyle(numerals: ChordStyle.Numerals(rawValue: UserDefaults.standard.string(forKey: "numerals") ?? "") ?? .letters,
+                                      showBass: UserDefaults.standard.bool(forKey: "showBass")) {
         didSet {
             refreshPiano()
             if style.numerals != oldValue.numerals { UserDefaults.standard.set(style.numerals.rawValue, forKey: "numerals") }
+            if style.showBass != oldValue.showBass { UserDefaults.standard.set(style.showBass, forKey: "showBass") }
         }
     }
     /// MIDI export: the chord track follows the recording's accompaniment rhythm (off: held chords).

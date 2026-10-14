@@ -421,6 +421,23 @@ def analyze(path, wav_out=None):
                 chords[k]['quality'] = q
         i = j + 1
 
+    # Pass 3: inversions. Where the bass plays another note of the chord (3rd, 5th, 7th…) instead of
+    # the root, for at least two beats in a row, the chord gets that bass note (D/F#).
+    bass_n2 = seg_bass / (seg_bass.max(axis=0, keepdims=True) + 1e-9)
+    cand = [None] * n_seg
+    for k in range(n_seg):
+        c = chords[k]
+        if c['root'] is None:
+            continue
+        tones = {(c['root'] + iv) % 12 for iv in QUALITIES.get(c['quality'], [0, 4, 7])}
+        top = int(np.argmax(bass_n2[:, k]))
+        if top in tones and top != c['root'] and bass_n2[c['root'], k] < 0.6:
+            cand[k] = top
+    for k in range(n_seg):
+        same_chord = lambda m: 0 <= m < n_seg and (chords[m]['root'], chords[m]['quality']) == (chords[k]['root'], chords[k]['quality'])
+        if cand[k] is not None and any(same_chord(m) and cand[m] == cand[k] for m in (k - 1, k + 1)):
+            chords[k]['detectedBass'] = cand[k]
+
     key_root, key_mode = detect_key(chroma.mean(axis=1))
 
     # How sure we are of each beat's chord: its share of the evidence at that beat.
@@ -480,6 +497,7 @@ def analyze(path, wav_out=None):
         'pickup': pickup,
         'bar_twins': twins,
         'sections': sections,
+        'inversions': True,                 # beats carry detectedBass where the bass plays another chord note
         'onsets': onsets,
     }
 

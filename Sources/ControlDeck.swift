@@ -29,6 +29,11 @@ struct ChordsCard: View {
                 Button("EXTENDED") { session.style.simple = false }
                     .buttonStyle(PillButtonStyle(color: Theme.accent, active: !session.style.simple))
                     .help("7ths, maj7, sus, add9, dim…")
+                Button { session.style.showBass.toggle() } label: { Text("BASS /") }
+                    .buttonStyle(PillButtonStyle(color: Theme.green, active: session.style.showBass, small: true))
+                    .disabled(session.style.simple)
+                    .modifier(DisabledDim())
+                    .help("Inversions: where the bass plays another chord note, the chord says so (D/F#) – also in the sound and the MIDI bass. EXTENDED only.")
                 Rectangle().fill(Theme.line).frame(width: 1, height: 18).padding(.horizontal, 3)
                 ForEach([(ChordStyle.Numerals.letters, "ABC", "Chord names: C#m, A, E7"),
                          (.roman, "ROMAN", "Degrees of the key in Roman numerals: vi, IV, V7"),

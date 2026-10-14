@@ -16,6 +16,7 @@ struct Analysis: Codable, Equatable {
         var restart: Bool?        // set by hand: the same chord is struck again here (a new chord in the grid and MIDI)
         var bass: Int?            // set by hand: a bass note other than the root
         var notes: [Int]?         // set by hand: exact MIDI notes (a chord built on the piano)
+        var detectedBass: Int?    // found by the engine: the bass plays this chord note, not the root (an inversion)
     }
     var duration: Double
     var tempo: Double
@@ -28,11 +29,13 @@ struct Analysis: Codable, Equatable {
     var sections: [SectionMark]?
     /// The accompaniment's rhythm: [time, strength 0…1] of every note start in the harmonic part.
     var onsets: [[Double]]?
+    /// The engine looked for inversions (beats may carry detectedBass).
+    var inversions: Bool?
 
     enum CodingKeys: String, CodingKey {
         case duration, tempo, meter, key, beats
         case barTwins = "bar_twins"
-        case sections, onsets
+        case sections, onsets, inversions
     }
 
     /// A chord run is unsure when its weakest beat is below `unsureWeakest` or its average below `unsureAverage`
@@ -69,6 +72,8 @@ struct ChordStyle: Equatable {
     var simple = false
     /// Chord names as letters (C#m), or as scale degrees of the key: Roman (vi) or Nashville (6m).
     var numerals = Numerals.letters
+    /// Show the bass notes the engine found (D/F#). Bass notes set by hand always show.
+    var showBass = false
 
     enum Numerals: String, CaseIterable {
         case letters, roman, nashville
@@ -83,7 +88,7 @@ struct ChordStyle: Equatable {
         guard let r = b.root else { return .none }
         if simple { return Chord(root: (r + transpose + 120) % 12, quality: b.base) }
         return Chord(root: (r + transpose + 120) % 12, quality: b.quality,
-                     bass: b.bass.map { ($0 + transpose + 120) % 12 },
+                     bass: (b.bass ?? (showBass ? b.detectedBass : nil)).map { ($0 + transpose + 120) % 12 },
                      notes: b.notes.map { $0.map { $0 + transpose } })
     }
 
@@ -357,6 +362,7 @@ struct Song: Codable, Identifiable, Equatable {
             a.beats[i].restart = e.restart
             a.beats[i].bass = e.bass
             a.beats[i].notes = e.notes
+            a.beats[i].detectedBass = nil           // a chord set by hand says everything itself
         }
         return a
     }

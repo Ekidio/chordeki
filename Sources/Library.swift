@@ -34,7 +34,7 @@ final class Library: ObservableObject {
             // Songs analyzed by an older engine get the new findings (unsure chords, repeats, sections); hand fixes stay.
             for i in songs.indices where songs[i].state == .ready
                 && (songs[i].analysis?.barTwins == nil || songs[i].analysis?.sections == nil
-                    || songs[i].analysis?.onsets == nil) {
+                    || songs[i].analysis?.onsets == nil || songs[i].analysis?.inversions == nil) {
                 songs[i].state = .queued
             }
         }
