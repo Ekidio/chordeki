@@ -207,8 +207,15 @@ struct NowPanel: View {
             HStack {
                 Text("NOW").font(.system(size: 9.5, weight: .heavy)).tracking(1.2).foregroundColor(Theme.accent)
                 Spacer()
+                if curChord.root != nil {
+                    Button { session.openFingerings(curChord) } label: {
+                        HStack(spacing: 4) { Image(systemName: "hand.raised.fingers.spread"); Text("SHAPES") }
+                    }
+                    .buttonStyle(PillButtonStyle(color: Theme.accent, small: true))
+                    .help(diagramStyle == "guitar" ? "Other fingerings for this chord" : "Other voicings for this chord")
+                }
                 Button { session.hear(curChord) } label: {
-                    HStack(spacing: 4) { Image(systemName: "pianokeys"); Text("HEAR") }
+                    HStack(spacing: 4) { Image(systemName: diagramStyle == "guitar" ? "guitars" : "pianokeys"); Text("HEAR") }
                 }
                 .buttonStyle(PillButtonStyle(color: Theme.accent, small: true))
                 .disabled(curChord.root == nil)
@@ -637,14 +644,31 @@ struct DiagramStrip: View {
                                 .lineLimit(1)
                             ChordPicture(chord: c, color: on ? .black : Theme.text)
                                 .frame(width: diagramStyle == "piano" ? 96 : 54, height: 64)
+                            do {
+                                let n = diagramStyle == "guitar" ? GuitarChords.voicings(c).count : ChordNotes.pianoVoicings(c).count
+                                if n > 1 {
+                                    Button { session.openFingerings(c) } label: {
+                                        Text("\(n) SHAPES").font(.system(size: 8.5, weight: .heavy)).tracking(0.6)
+                                            .foregroundColor(on ? .black : Theme.accent)
+                                            .padding(.horizontal, 5).padding(.vertical, 2)
+                                            .background(Capsule().fill((on ? Color.black : Theme.accent).opacity(0.14)))
+                                    }
+                                    .buttonStyle(.plain)
+                                    .help((diagramStyle == "guitar" ? "Other fingerings for " : "Other voicings for ") + session.style.name(c, key: analysis.key))
+                                }
+                            }
                         }
                         .padding(.horizontal, 8).padding(.vertical, 6)
                         .background(RoundedRectangle(cornerRadius: 8).fill(on ? Theme.loop : Theme.panel2))
                         .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(picking ? Theme.accent.opacity(0.5) : .clear))
                         .contentShape(Rectangle())
                         .onTapGesture { picking ? session.setChord(c) : session.hear(c) }
+                        .contextMenu {
+                            Button("Hear \(session.style.name(c, key: analysis.key))") { session.hear(c) }
+                            Button(diagramStyle == "guitar" ? "Other Fingerings…" : "Other Voicings…") { session.openFingerings(c) }
+                        }
                         .help(picking ? "Put \(session.style.name(c, key: analysis.key)) on the selected beats"
-                                      : "Hear \(session.style.name(c, key: analysis.key)) on the piano")
+                                      : "Hear \(session.style.name(c, key: analysis.key)) on the \(diagramStyle == "guitar" ? "guitar" : "piano")")
                     }
                 }
                 .padding(.horizontal, 10).padding(.vertical, 8)

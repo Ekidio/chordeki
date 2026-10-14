@@ -286,7 +286,7 @@ enum ChordNotes {
     /// Chord tones with the root between F3 and E4.
     static func upper(_ c: Chord) -> [UInt8] {
         guard let r = c.root else { return [] }
-        if let notes = c.notes, !notes.isEmpty {                              // built by hand: exactly these
+        if let notes = c.notes ?? chosenPiano[key(c)], !notes.isEmpty {     // built by hand, or a picked voicing
             return notes.sorted().map { UInt8(max(21, min(108, $0))) }
         }
         let base = 53 + (r - 5 + 12) % 12
@@ -295,6 +295,43 @@ enum ChordNotes {
 
     /// The bass note (or the root), C2…B2.
     static func bass(_ c: Chord) -> UInt8? { (c.bass ?? c.root).map { UInt8(36 + $0) } }
+
+    /// A chord's identity for remembering a voicing or fingering: root, type and bass (not how it is named).
+    static func key(_ c: Chord) -> String {
+        guard let r = c.root else { return "" }
+        return ChordStyle.sharps[r] + c.quality + (c.bass.map { "/" + ChordStyle.sharps[$0] } ?? "")
+    }
+
+    /// Piano voicings picked for this song, by chord key. Set by the session.
+    nonisolated(unsafe) static var chosenPiano: [String: [Int]] = [:]
+
+    /// The piano voicings of a chord: root position, every inversion, and an open (drop-2 / spread) one.
+    /// Upper notes only, kept around the middle of the keyboard; the bass is played separately.
+    static func pianoVoicings(_ c: Chord) -> [(label: String, notes: [Int])] {
+        guard let r = c.root else { return [] }
+        let ivs = (intervals[c.quality] ?? recognizeIntervals[c.quality] ?? [0, 4, 7]).sorted()
+        let rootNote = 53 + (r - 5 + 12) % 12                                 // F3…E4, as the standard voicing
+        let names = ["ROOT", "1ST INV", "2ND INV", "3RD INV", "4TH INV", "5TH INV"]
+        var out: [(String, [Int])] = []
+        for k in ivs.indices {
+            // close position starting on the k-th chord tone
+            var notes = (ivs[k...] + ivs[..<k].map { $0 + 12 }).map { rootNote + $0 }
+            while let lo = notes.min(), lo > 64 { notes = notes.map { $0 - 12 } }
+            while let lo = notes.min(), lo < 52 { notes = notes.map { $0 + 12 } }
+            out.append((names[min(k, names.count - 1)], notes))
+        }
+        // Open: the second note from the top dropped an octave (4+ notes), or root–5th–3rd spread (triads)
+        let close = ivs.map { rootNote + $0 }
+        if close.count >= 4 {
+            var open = close
+            let i = open.count - 2
+            open[i] -= 12
+            out.append(("OPEN", open.sorted()))
+        } else if close.count == 3 {
+            out.append(("OPEN", [close[0], close[2], close[1] + 12]))
+        }
+        return out
+    }
 
     /// Chord types the piano builder recognizes (intervals above the root).
     static let recognizeIntervals: [String: [Int]] = [
@@ -349,6 +386,10 @@ struct Song: Codable, Identifiable, Equatable {
     var checked: Set<Int>?
     /// Sections set by hand (nil: the engine's suggestion; empty: none).
     var sections: [SectionMark]?
+    /// Guitar fingerings picked for this song, by chord key (GuitarChords.key).
+    var voicings: [String: [Int]]?
+    /// Piano voicings picked for this song, by chord key (ChordNotes.key).
+    var pianoVoicings: [String: [Int]]?
 
     var isReady: Bool { state == .ready && analysis != nil }
 

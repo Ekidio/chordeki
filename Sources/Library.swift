@@ -98,6 +98,14 @@ final class Library: ObservableObject {
         update(id) { $0.edits = edits.isEmpty ? nil : edits }
     }
 
+    func setPianoVoicings(_ id: UUID, _ voicings: [String: [Int]]) {
+        update(id) { $0.pianoVoicings = voicings.isEmpty ? nil : voicings }
+    }
+
+    func setVoicings(_ id: UUID, _ voicings: [String: [Int]]) {
+        update(id) { $0.voicings = voicings.isEmpty ? nil : voicings }
+    }
+
     func setSections(_ id: UUID, _ sections: [SectionMark]?) {
         update(id) { $0.sections = sections }
     }

@@ -80,6 +80,8 @@ final class Session: ObservableObject {
             redoStack = []
             updateUndoFlags()
         }
+        GuitarChords.chosen = self.song?.voicings ?? [:]
+        ChordNotes.chosenPiano = self.song?.pianoVoicings ?? [:]
         player.load(self.song)
         refreshPiano()
         currentBeat = analysis?.beatIndex(at: player.position) ?? -1
@@ -351,6 +353,42 @@ final class Session: ObservableObject {
 
     /// The piano chord builder is open (for the selection).
     @Published var builderOpen = false
+
+    // MARK: Guitar fingerings
+
+    /// The chord whose fingerings are shown in the picker (nil: closed).
+    @Published var fingeringChord: Chord?
+
+    func openFingerings(_ c: Chord) {
+        guard c.root != nil else { return }
+        fingeringChord = c
+    }
+
+    /// Use this piano voicing for the chord everywhere in this song – sound, MIDI, pictures (and hear it).
+    func choosePianoVoicing(_ c: Chord, _ notes: [Int]?) {
+        guard let id = song?.id else { return }
+        var v = song?.pianoVoicings ?? [:]
+        v[ChordNotes.key(c)] = notes
+        Library.shared.setPianoVoicings(id, v)
+        song = Library.shared.songs.first { $0.id == id }
+        ChordNotes.chosenPiano = song?.pianoVoicings ?? [:]
+        refreshPiano()
+        objectWillChange.send()
+        player.audition(ChordNotes.all(c), sound: .piano)
+    }
+
+    /// Use this fingering for the chord everywhere in this song (and hear it).
+    func chooseFingering(_ c: Chord, _ frets: [Int]?) {
+        guard let id = song?.id else { return }
+        var v = song?.voicings ?? [:]
+        v[GuitarChords.key(c)] = frets
+        Library.shared.setVoicings(id, v)
+        song = Library.shared.songs.first { $0.id == id }
+        GuitarChords.chosen = song?.voicings ?? [:]
+        refreshPiano()
+        objectWillChange.send()
+        player.audition(GuitarChords.notes(c), sound: .guitar)
+    }
 
     func openBuilder(_ beat: Int? = nil) {
         if let beat { ensureSelected(beat) }

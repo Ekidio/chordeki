@@ -43,7 +43,108 @@ enum GuitarChords {
         return shape
     }
 
+    /// Fingerings the user picked for this song, by chord key (see `key(_:)`). Set by the session.
+    nonisolated(unsafe) static var chosen: [String: [Int]] = [:]
+
+    /// A chord's identity for remembering its fingering: root, type and bass (not how it is named).
+    static func key(_ c: Chord) -> String { ChordNotes.key(c) }
+
+    /// The fingering shown and played: the one picked for this song, or the standard shape.
     static func voicing(_ chord: Chord) -> Voicing? {
+        if let f = chosen[key(chord)] { return Voicing(frets: f, barre: barreFret(f)) }
+        return standardVoicing(chord)
+    }
+
+    /// The barre fret of a shape: when more than four strings are fretted, the lowest fret is held by one finger.
+    static func barreFret(_ frets: [Int]) -> Int? {
+        let fretted = frets.filter { $0 > 0 }
+        guard fretted.count > 4, let low = fretted.min(), frets.filter({ $0 == low }).count >= 2 else { return nil }
+        return low
+    }
+
+    private nonisolated(unsafe) static var cache: [String: [Voicing]] = [:]
+
+    /// Playable fingerings of a chord, the standard shape first, then up the neck (at most 6).
+    /// Playable: at most 4 frets wide, at most 4 fingers (a barre counts as one), at least 4 strings,
+    /// muted strings only at the edges, the bass (root, or the slash note) lowest, and every chord
+    /// tone in – only the 5th may be left out of a chord of four or more notes.
+    static func voicings(_ chord: Chord) -> [Voicing] {
+        guard let root = chord.root else { return [] }
+        let k = key(chord)
+        if let c = cache[k] { return c }
+        let ivs = ChordNotes.intervals[chord.quality] ?? ChordNotes.recognizeIntervals[chord.quality] ?? [0, 4, 7]
+        let tones = Set(ivs.map { (root + $0) % 12 })
+        let needed = ivs.count >= 4 ? tones.subtracting([(root + 7) % 12]) : tones
+        let bass = chord.bass ?? root
+        let open = [40, 45, 50, 55, 59, 64]
+
+        var found: [(frets: [Int], score: Double)] = []
+        for pos in 0...12 {
+            // Frets this window offers on each string: muted, open (low positions), or a chord tone
+            let options: [[Int]] = open.map { o in
+                var opts = [-1]
+                if pos <= 3, tones.contains(o % 12) { opts.append(0) }
+                for f in max(1, pos)...(max(1, pos) + 3) where tones.contains((o + f) % 12) { opts.append(f) }
+                return opts
+            }
+            var frets = [Int](repeating: -1, count: 6)
+            func walk(_ s: Int) {
+                if s == 6 {
+                    if let sc = score(frets, open: open, needed: needed, bass: bass, pos: pos) { found.append((frets, sc)) }
+                    return
+                }
+                for f in options[s] { frets[s] = f; walk(s + 1) }
+            }
+            walk(0)
+        }
+        // The best per neck position, then the most different ones
+        var picked: [[Int]] = []
+        // The standard shape first – unless a slash chord needs another bass than its lowest note
+        if let std = standardVoicing(chord), let low = std.frets.indices.first(where: { std.frets[$0] >= 0 }),
+           (open[low] + std.frets[low]) % 12 == bass {
+            picked.append(std.frets)
+        }
+        for cand in found.sorted(by: { $0.score < $1.score }) where picked.count < 6 {
+            let low = cand.frets.filter { $0 > 0 }.min() ?? 0
+            let clash = picked.contains { p in
+                p == cand.frets || abs((p.filter { $0 > 0 }.min() ?? 0) - low) < 2
+            }
+            if !clash { picked.append(cand.frets) }
+        }
+        let out = picked.map { Voicing(frets: $0, barre: barreFret($0)) }
+            .sorted { ($0.frets.filter { $0 > 0 }.min() ?? 0) < ($1.frets.filter { $0 > 0 }.min() ?? 0) }
+        cache[k] = out
+        return out
+    }
+
+    /// nil when not playable; lower is better.
+    private static func score(_ f: [Int], open: [Int], needed: Set<Int>, bass: Int, pos: Int) -> Double? {
+        let sounding = f.indices.filter { f[$0] >= 0 }
+        guard sounding.count >= 4 else { return nil }
+        // Mutes only at the low end, plus possibly the top string
+        guard let first = sounding.first, let last = sounding.last else { return nil }
+        if (first...last).contains(where: { f[$0] < 0 }) { return nil }
+        if last < 4 { return nil }
+        // Bass lowest, all needed tones present
+        guard (open[first] + f[first]) % 12 == bass else { return nil }
+        let pcs = Set(sounding.map { (open[$0] + f[$0]) % 12 })
+        guard needed.isSubset(of: pcs) else { return nil }
+        let fretted = f.filter { $0 > 0 }
+        if let lo = fretted.min(), let hi = fretted.max(), hi - lo > 3 { return nil }
+        // Fingers: one for the barre (lowest fret, when more than four strings are fretted), one per other note
+        var fingers = fretted.count
+        if fretted.count > 4, let lo = fretted.min() {
+            fingers = fretted.filter { $0 != lo }.count + 1
+            // a barre must lie flat: no open string above the barre's first string
+            let from = f.firstIndex(of: lo)!
+            if f[from...].contains(0) { return nil }
+        }
+        guard fingers <= 4 else { return nil }
+        return Double(fingers) * 1.0 + Double(fretted.min() ?? 0) * 0.15 - Double(sounding.count) * 0.6
+    }
+
+    /// The standard shape: an open chord, or the nearest E- or A-form barre.
+    static func standardVoicing(_ chord: Chord) -> Voicing? {
         guard let root = chord.root else { return nil }
         if let s = open[ChordStyle.sharps[root] + chord.quality] {
             let frets = s.map { $0 == "x" ? -1 : Int(String($0))! }
@@ -134,9 +235,9 @@ struct PianoChord: View {
     var body: some View {
         Canvas { ctx, size in
             let lit: Set<Int>
-            if let r = chord.root, let notes = chord.notes, let low = notes.min() {
+            if let r = chord.root, let notes = chord.notes ?? ChordNotes.chosenPiano[ChordNotes.key(chord)], let low = notes.min() {
                 // A chord built by hand: its own voicing, from the bass up (folded into two octaves)
-                let start = chord.bass ?? r
+                let start = ((low % 12) + 12) % 12          // the lowest note where it really is
                 lit = Set(notes.map { n -> Int in
                     var k = start + (n - low)
                     while k > 23 { k -= 12 }
@@ -151,9 +252,9 @@ struct PianoChord: View {
             }
             let root: Int? = {
                 guard let r = chord.root else { return nil }
-                if let notes = chord.notes, let low = notes.min() {
-                    // the root's place in the hand-built voicing
-                    let start = chord.bass ?? r
+                if let notes = chord.notes ?? ChordNotes.chosenPiano[ChordNotes.key(chord)], let low = notes.min() {
+                    // the root's place in the hand-built (or picked) voicing
+                    let start = ((low % 12) + 12) % 12          // the lowest note where it really is
                     return notes.map { start + ($0 - low) }.map { var k = $0; while k > 23 { k -= 12 }; return k }
                         .first { ($0 % 12) == r }
                 }
