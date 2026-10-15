@@ -60,6 +60,11 @@ struct ChordsCard: View {
                     .disabled(session.style.transpose == 0)
                     .modifier(DisabledDim())
                     .help("Original key")
+                Button { session.audioTranspose.toggle() } label: {
+                    HStack(spacing: 3) { Image(systemName: "waveform"); Text("AUDIO") }
+                }
+                .buttonStyle(PillButtonStyle(color: Theme.loop, active: session.audioTranspose, small: true))
+                .help("Transpose the song itself too (tempo kept). Off: only the chords move.")
             }
         }
     }

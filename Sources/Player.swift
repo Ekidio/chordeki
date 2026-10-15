@@ -44,6 +44,43 @@ final class ChordPlayer: ObservableObject {
     private var timer: Timer?
     private let piano = AVAudioUnitSampler()
     private let guitar = AVAudioUnitSampler()
+    /// Shifts the song's pitch, tempo kept. Only in the chain while transposed (0 = the song as it is).
+    private let shifter = AVAudioUnitTimePitch()
+    private var songFormat: AVAudioFormat?
+    private var positionBeforeShift = 0.0
+
+    /// The song's audio, transposed this many semitones (tempo kept).
+    var audioShift = 0 {
+        willSet { positionBeforeShift = currentPosition() }   // measured with the old chain's latency
+        didSet {
+            guard audioShift != oldValue else { return }
+            let wasPlaying = isPlaying
+            let pos = positionBeforeShift
+            stop()
+            connectSong()
+            clock.position = pos
+            if wasPlaying { play() }
+        }
+    }
+
+    /// How late the shifted audio comes out (seconds); 0 when not shifted.
+    private var shiftLatency: Double { audioShift == 0 ? 0 : max(0, shifter.latency) }
+
+    /// The song → (pitch shifter, only when transposed) → mixer.
+    private func connectSong() {
+        guard let fmt = songFormat else { return }
+        engine.disconnectNodeOutput(node)
+        engine.disconnectNodeOutput(shifter)
+        if audioShift == 0 {
+            engine.connect(node, to: engine.mainMixerNode, format: fmt)
+        } else {
+            shifter.pitch = Float(audioShift * 100)
+            shifter.rate = 1
+            shifter.overlap = 32                                               // the finest (cleanest) setting
+            engine.connect(node, to: shifter, format: fmt)
+            engine.connect(shifter, to: engine.mainMixerNode, format: fmt)
+        }
+    }
     private var pianoIndex = -2
     private var sounding: [UInt8] = []
     private var soundingOn: AVAudioUnitSampler?
@@ -60,6 +97,7 @@ final class ChordPlayer: ObservableObject {
         engine.attach(clickNode)
         engine.attach(piano)
         engine.attach(guitar)
+        engine.attach(shifter)
         engine.connect(clickNode, to: engine.mainMixerNode, format: clickFormat)
         engine.connect(piano, to: engine.mainMixerNode, format: nil)
         engine.connect(guitar, to: engine.mainMixerNode, format: nil)
@@ -149,8 +187,8 @@ final class ChordPlayer: ObservableObject {
         do {
             let f = try AVAudioFile(forReading: song.audioURL)
             file = f
-            engine.disconnectNodeOutput(node)
-            engine.connect(node, to: engine.mainMixerNode, format: f.processingFormat)
+            songFormat = f.processingFormat
+            connectSong()
             duration = Double(f.length) / f.processingFormat.sampleRate
         } catch {
             // Not playable (yet): e.g. a WEBM before the engine has written its WAV.
@@ -193,7 +231,8 @@ final class ChordPlayer: ObservableObject {
         if clickOn {
             let csr = clickFormat.sampleRate
             for b in beats where b.t >= startPos - 0.001 {
-                let at = AVAudioTime(sampleTime: AVAudioFramePosition((b.t - startPos) * csr), atRate: csr)
+                // the shifted audio comes out a little later: the clicks wait for it
+                let at = AVAudioTime(sampleTime: AVAudioFramePosition((b.t - startPos + shiftLatency) * csr), atRate: csr)
                 clickNode.scheduleBuffer(b.down ? clickHigh : clickLow, at: at)
             }
         }
@@ -253,7 +292,7 @@ final class ChordPlayer: ObservableObject {
         guard isPlaying, let nodeTime = node.lastRenderTime, let pt = node.playerTime(forNodeTime: nodeTime) else {
             return clock.position
         }
-        let latency = compensated ? engine.outputNode.presentationLatency : 0
+        let latency = (compensated ? engine.outputNode.presentationLatency : 0) + shiftLatency
         return max(startPos, startPos + Double(pt.sampleTime) / pt.sampleRate - latency)
     }
 

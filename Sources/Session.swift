@@ -14,10 +14,21 @@ final class Session: ObservableObject {
                                       showBass: UserDefaults.standard.bool(forKey: "showBass")) {
         didSet {
             refreshPiano()
+            if style.transpose != oldValue.transpose { applyAudioShift() }
             if style.numerals != oldValue.numerals { UserDefaults.standard.set(style.numerals.rawValue, forKey: "numerals") }
             if style.showBass != oldValue.showBass { UserDefaults.standard.set(style.showBass, forKey: "showBass") }
         }
     }
+    /// Transposing moves the song's audio too (tempo kept). Off: only the chords move.
+    @Published var audioTranspose = UserDefaults.standard.object(forKey: "audioTranspose") as? Bool ?? true {
+        didSet {
+            UserDefaults.standard.set(audioTranspose, forKey: "audioTranspose")
+            applyAudioShift()
+        }
+    }
+
+    private func applyAudioShift() { player.audioShift = audioTranspose ? style.transpose : 0 }
+
     /// MIDI export: the chord track follows the recording's accompaniment rhythm (off: held chords).
     @Published var midiRhythm = UserDefaults.standard.bool(forKey: "midiRhythm") {
         didSet { UserDefaults.standard.set(midiRhythm, forKey: "midiRhythm") }
