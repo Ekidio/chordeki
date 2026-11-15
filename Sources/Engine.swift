@@ -5,10 +5,23 @@ import SwiftUI
 /// CHORDEKI's own analysis engine: a private Python with the beat model (Beat This!) and librosa,
 /// set up by one click in ~/Library/Application Support/CHORDEKI/Engine. Same recipe as STEMEKI's.
 enum Engine {
-    static let pythonURL = URL(string: "https://github.com/astral-sh/python-build-standalone/releases/download/20250317/cpython-3.10.16+20250317-aarch64-apple-darwin-install_only.tar.gz")!
+    /// Every download has a fallback (November 2026: the beat model's original server answered HTTP 500).
+    /// Order: GitHub → our own ekidio.hu mirror → the original. The SHA-256 checks accept only the exact same file.
+    static let mirror = "https://ekidio.hu/download/chordeki/engine/"
+    static let pythonFile = "cpython-3.10.16+20250317-aarch64-apple-darwin-install_only.tar.gz"
+    static let pythonURLs = [
+        URL(string: "https://github.com/astral-sh/python-build-standalone/releases/download/20250317/\(pythonFile)")!,
+        URL(string: mirror + pythonFile.replacingOccurrences(of: "+", with: "%2B"))!,
+    ]
+    /// The Python packages come from PyPI; if that fails, from the same tested wheels on ekidio.hu.
+    static let wheelsPage = mirror + "wheels/links.html"
     static let pythonSHA256 = "e99f8457d9c79592c036489c5cfa78df76e4762d170665e499833e045d82608f"
     /// The beat / downbeat model (Beat This!, JKU Linz, MIT), where its own loader looks for it.
-    static let beatModelURL = URL(string: "https://cloud.cp.jku.at/public.php/dav/files/7ik4RrBKTS273gp/final0.ckpt")!
+    static let beatModelURLs = [
+        URL(string: "https://github.com/Ekidio/chordeki/releases/download/engine-models/beat_this-final0.ckpt")!,
+        URL(string: mirror + "beat_this-final0.ckpt")!,
+        URL(string: "https://cloud.cp.jku.at/public.php/dav/files/7ik4RrBKTS273gp/final0.ckpt")!,
+    ]
     static let beatModelFile = "beat_this-final0.ckpt"
     static let beatModelSHA256 = "8c328b45f59d8dd3dff219253ff6a8d6482be57d0133a29140e2febbf8eb8331"
     /// Native packages must come as ready-made wheels: no compiler on the user's Mac.
@@ -150,6 +163,24 @@ final class EngineInstaller: ObservableObject {
         }
     }
 
+    /// Downloads from the first source that works and gives the expected file (SHA-256); otherwise the last error.
+    private func fetchFirst(_ urls: [URL], to dest: URL, sha256: String, what: String,
+                            progress: @escaping @MainActor (Double, Int64, Int64) -> Void) async throws {
+        var lastError: Error = EngineError("The \(what) could not be downloaded. Please try again.")
+        for url in urls {
+            try? FileManager.default.removeItem(at: dest)
+            do {
+                try await Downloader.fetch(url, to: dest, progress: progress)
+                if try Self.sha256(dest) == sha256 { return }
+                lastError = EngineError("The \(what) download is damaged (checksum mismatch). Please try again.")
+            } catch {
+                lastError = error   // try the next source
+            }
+        }
+        try? FileManager.default.removeItem(at: dest)
+        throw lastError
+    }
+
     private func install() async throws {
         let fm = FileManager.default
         let work = Engine.dir.deletingLastPathComponent().appendingPathComponent("Engine.partial")
@@ -164,12 +195,9 @@ final class EngineInstaller: ObservableObject {
         // 1. Python.
         step = "STEP 1 / 4 · Downloading Python"
         let archive = work.appendingPathComponent("python.tar.gz")
-        try await Downloader.fetch(Engine.pythonURL, to: archive) { [weak self] f, got, total in
+        try await fetchFirst(Engine.pythonURLs, to: archive, sha256: Engine.pythonSHA256, what: "Python") { [weak self] f, got, total in
             self?.fraction = 0.08 * f
             self?.detail = Self.megabytes(got, total)
-        }
-        guard try Self.sha256(archive) == Engine.pythonSHA256 else {
-            throw EngineError("The Python download is damaged (checksum mismatch). Please try again.")
         }
         detail = "Unpacking…"
         try await Engine.run("/usr/bin/tar", ["-xzf", archive.path, "-C", work.path])
@@ -186,19 +214,28 @@ final class EngineInstaller: ObservableObject {
         let total = Double((try? String(contentsOf: requirements, encoding: .utf8))?
             .split(separator: "\n").filter { $0.contains("==") }.count ?? 40)
         var collected = 0.0
-        try await Engine.run(python.path, ["-m", "pip", "install", "--no-cache-dir", "--prefer-binary",
-                                           "--only-binary=\(Engine.binaryOnly)", "--disable-pip-version-check",
-                                           "--no-warn-script-location", "-r", requirements.path],
-                             env: ["PIP_NO_INPUT": "1"]) { [weak self] line in
-            guard let self else { return }
-            if line.hasPrefix("Collecting ") {
-                collected += 1
-                self.detail = String(line.dropFirst(11)).components(separatedBy: " ").first ?? ""
-                self.fraction = 0.1 + 0.6 * min(1, collected / total)
-            } else if line.hasPrefix("Installing collected packages") {
-                self.detail = "Putting it all together…"
-                self.fraction = 0.72
+        let pip = { (source: [String]) async throws in
+            collected = 0
+            try await Engine.run(python.path, ["-m", "pip", "install", "--no-cache-dir", "--prefer-binary",
+                                               "--only-binary=\(Engine.binaryOnly)", "--disable-pip-version-check",
+                                               "--no-warn-script-location"] + source + ["-r", requirements.path],
+                                 env: ["PIP_NO_INPUT": "1"]) { [weak self] line in
+                guard let self else { return }
+                if line.hasPrefix("Collecting ") || line.hasPrefix("Looking in links") {
+                    collected += line.hasPrefix("Collecting ") ? 1 : 0
+                    self.detail = String(line.dropFirst(11)).components(separatedBy: " ").first ?? ""
+                    self.fraction = 0.1 + 0.6 * min(1, collected / total)
+                } else if line.hasPrefix("Installing collected packages") {
+                    self.detail = "Putting it all together…"
+                    self.fraction = 0.72
+                }
             }
+        }
+        do {
+            try await pip([])                                                   // PyPI
+        } catch {
+            detail = "Trying the EKIDIO mirror…"
+            try await pip(["--no-index", "--find-links", Engine.wheelsPage])   // the same tested wheels on ekidio.hu
         }
 
         // 3. The beat model.
@@ -206,13 +243,9 @@ final class EngineInstaller: ObservableObject {
         try fm.createDirectory(at: checkpoints, withIntermediateDirectories: true)
         let beatModel = checkpoints.appendingPathComponent(Engine.beatModelFile)
         step = "STEP 3 / 4 · Downloading the beat model"
-        try await Downloader.fetch(Engine.beatModelURL, to: beatModel) { [weak self] f, got, total in
+        try await fetchFirst(Engine.beatModelURLs, to: beatModel, sha256: Engine.beatModelSHA256, what: "beat model") { [weak self] f, got, total in
             self?.fraction = 0.74 + 0.16 * f
             self?.detail = Self.megabytes(got, total)
-        }
-        guard try Self.sha256(beatModel) == Engine.beatModelSHA256 else {
-            try? fm.removeItem(at: beatModel)
-            throw EngineError("The beat model download is damaged (checksum mismatch). Please try again.")
         }
 
         // 4. Does it all load?
